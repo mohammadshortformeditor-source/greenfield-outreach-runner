@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
-import tempfile
+import sys
+import uuid
 from pathlib import Path
+
+from sqlalchemy import create_engine
 
 import runner_once as base
 
@@ -19,66 +21,64 @@ def main() -> int:
     _normalize_trigger_for_base()
     transport = base._load_transport()
     payload = base._request_from_trigger()
-    operation = str(payload["operation"])
     request_id = str(payload["request_id"])
 
-    env = os.environ.copy()
-    env["GFO_PRODUCTION_DSN"] = transport.lease(operation, request_id)
-    env["PYTHONPATH"] = str(transport.ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+    engine_root = Path(os.environ.get("GFO_ENGINE_ROOT", "engine")).resolve()
+    os.chdir(engine_root)
+    sys.path.insert(0, str(engine_root / "src"))
+    sys.path.insert(0, str(engine_root))
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_root = Path(temp_dir)
-        request_path = temp_root / "request.json"
-        output_path = temp_root / "output.json"
-        shim_path = temp_root / "existing_guard_launcher.py"
-        request_path.write_text(json.dumps(payload), encoding="utf-8")
-        shim_path.write_text(
-            "import runpy, sys\n"
-            "import outreach.runtime.r0007_route_identity_binding  # existing GREENFIELD guard\n"
-            "launcher = sys.argv[1]\n"
-            "sys.argv = [launcher] + sys.argv[2:]\n"
-            "runpy.run_path(launcher, run_name='__main__')\n",
-            encoding="utf-8",
-        )
+    from outreach.runtime.r0007_raw_motor_to_gold_bridge import (
+        R0007RawMotorToGoldBridgeOperatorExecutionService,
+    )
 
-        completed = subprocess.run(
-            [
-                "python",
-                str(shim_path),
-                str(transport.LAUNCHER),
-                "--request",
-                str(request_path),
-                "--output",
-                str(output_path),
-            ],
-            cwd=str(transport.ROOT),
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=int(os.environ.get("GFO_RENDER_RUN_TIMEOUT_SECONDS", "1800")),
-            check=False,
-        )
-        if not output_path.exists():
-            raise RuntimeError("existing-guard canary launcher exited without result")
-        result = json.loads(output_path.read_text(encoding="utf-8"))
+    dsn = transport.norm(transport.lease("FIND_GOLD_BATCH", request_id))
+    db = create_engine(dsn, future=True, pool_pre_ping=True)
+    try:
+        with db.begin() as connection:
+            result = dict(
+                R0007RawMotorToGoldBridgeOperatorExecutionService().execute(
+                    connection,
+                    payload,
+                )
+            )
+    except Exception as exc:
+        result = {
+            "status": "FAILED_FAIL_CLOSED",
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+            "quality_relaxation": False,
+            "send_authority": "NOT_GRANTED",
+            "outbound_side_effects": False,
+        }
+        exit_code = 1
+    else:
+        exit_code = 0
+    finally:
+        db.dispose()
 
-    base._persist_private_result(transport, payload, result, completed.returncode)
-
+    base._persist_private_result(transport, payload, result, exit_code)
+    external = result.get("external_authority_batch_request")
+    sources = external.get("sources") if isinstance(external, dict) else None
     safe = {
-        "public_runner": "EXISTING_GUARD_CANARY_FINISHED",
+        "public_runner": "FRESH_MOTOR_CANARY_FINISHED",
         "private_result_persisted": True,
         "request_id": request_id,
-        "operation": operation,
         "status": result.get("status"),
+        "raw_motor_to_gold_bridge_id": result.get("raw_motor_to_gold_bridge_id"),
         "motor_role": result.get("motor_role"),
+        "motor_performs_gold_qualification": result.get("motor_performs_gold_qualification"),
+        "external_authority_sources": sources,
+        "external_authority_candidate_count": result.get("external_authority_candidate_count"),
+        "pre_gold_filter_policy": result.get("pre_gold_filter_policy"),
+        "pre_gold_path": result.get("pre_gold_path"),
         "gold_gates_unchanged": result.get("gold_gates_unchanged"),
         "quality_relaxation": result.get("quality_relaxation"),
         "send_authority": result.get("send_authority", "NOT_GRANTED"),
-        "outbound_side_effects": result.get("outbound_side_effects", False),
-        "exit_code": completed.returncode,
+        "exit_code": exit_code,
     }
     print(json.dumps(safe, sort_keys=True), flush=True)
-    return 0 if completed.returncode == 0 and result.get("status") != "FAILED_FAIL_CLOSED" else 1
+    return exit_code
 
 
 if __name__ == "__main__":
