@@ -47,7 +47,7 @@ def main() -> int:
     raw_bridge.TRANSPORT_SAFE_HTTP_CACHE_MAX_ENTRIES = 4
     raw_bridge.TRANSPORT_SAFE_ROUTE_HIT_CAP = 72
 
-    dsn = transport.lease("FIND_GOLD_BATCH", request_id)
+    dsn = transport.norm(transport.lease("FIND_GOLD_BATCH", request_id))
     db = create_engine(dsn, future=True, pool_pre_ping=True)
     try:
         with db.begin() as connection:
