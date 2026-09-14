@@ -9,6 +9,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, text
 
+import mission_control
 import runner_once as base
 import resume_authority_once as authority
 
@@ -42,20 +43,14 @@ def _fresh_payload(target: int) -> dict:
     }
 
 
-def _load_pathfix_stage1(transport, source_request_id: str) -> dict:
-    """Load a persisted pathfix stage-1 result by request id.
-
-    The queue row may be marked FAILED only because an older public canary expected the
-    pre-pathfix verbose component labels. The private result itself must still prove the
-    canonical four-source boundary before it can be resumed.
-    """
+def _load_pathfix_stage1(transport, source_request_id: str) -> tuple[dict, dict]:
     db = transport.engine()
     try:
         with db.begin() as connection:
             row = connection.execute(
                 text(
                     f"""
-                    SELECT result
+                    SELECT payload, result
                     FROM {QUEUE}
                     WHERE request_id = :request_id
                     ORDER BY created_at DESC
@@ -68,6 +63,7 @@ def _load_pathfix_stage1(transport, source_request_id: str) -> dict:
         db.dispose()
     if row is None:
         raise RuntimeError("pathfix source stage-1 result not found")
+    stage1_payload = authority._json_object(row["payload"], "pathfix stage1 payload")
     stage1 = authority._json_object(row["result"], "pathfix stage1 result")
     external = stage1.get("external_authority_batch_request")
     expected_sources = [
@@ -86,7 +82,7 @@ def _load_pathfix_stage1(transport, source_request_id: str) -> dict:
         or stage1.get("send_authority") != "NOT_GRANTED"
     ):
         raise RuntimeError("pathfix source stage-1 four-source contract not verified")
-    return stage1
+    return stage1, stage1_payload
 
 
 def main() -> int:
@@ -96,8 +92,8 @@ def main() -> int:
         payload = _fresh_payload(int(value))
     else:
         source_request_id = f"pathfix-fresh-find_gold_batch-{value}"
-        stage1 = _load_pathfix_stage1(transport, source_request_id)
-        payload = authority._resume_payload(stage1)
+        stage1, stage1_payload = _load_pathfix_stage1(transport, source_request_id)
+        payload = authority._resume_payload(stage1, stage1_payload)
         payload["request_id"] = f"pathfix-canary-find_gold_batch-{os.environ.get('GITHUB_RUN_ID', uuid.uuid4().hex)}"
     request_id = str(payload["request_id"])
 
@@ -114,6 +110,20 @@ def main() -> int:
     db = create_engine(dsn, future=True, pool_pre_ping=True)
     try:
         with db.begin() as connection:
+            if mode == "FRESH":
+                baseline = mission_control._current_fast_cash_counts(connection)
+                target = int(value)
+                agency_target, direct_target = mission_control.balanced_targets(target)
+                payload.update(
+                    {
+                        "mission_id": f"pathfix-{os.environ.get('GITHUB_RUN_ID', uuid.uuid4().hex)}",
+                        "mission_contract": mission_control.MISSION_CONTRACT,
+                        "mission_requested_new_gold": target,
+                        "mission_fast_cash_baseline": baseline,
+                        "mission_target_mix": {"AGENCY": agency_target, "DIRECT": direct_target},
+                        "mission_wave": 1,
+                    }
+                )
             result = dict(
                 R0007RawMotorToGoldBridgeOperatorExecutionService().execute(
                     connection,
@@ -150,6 +160,8 @@ def main() -> int:
             result.get("status") == "EXTERNAL_AUTHORITY_BATCH_REQUIRED"
             and result.get("pre_gold_filter_policy") == "FOUR_SOURCE_PRIOR_CONTACT_ONLY"
             and result.get("prior_contact_filter_contract") == "FOUR_SOURCE_EXACT_EMAIL_ACTUAL_OUTREACH_ONLY_V1"
+            and result.get("mission_scope_contract") == mission_control.MISSION_CONTRACT
+            and result.get("mission_scope_active") is True
             and sources == expected_sources
             and active == expected_sources
             and result.get("motor_performs_gold_qualification") is not True
@@ -172,6 +184,8 @@ def main() -> int:
         "pre_gold_filter_policy": result.get("pre_gold_filter_policy"),
         "prior_contact_filter_contract": result.get("prior_contact_filter_contract"),
         "pre_gold_path": result.get("pre_gold_path"),
+        "mission_scope_contract": result.get("mission_scope_contract"),
+        "mission_scope_active": result.get("mission_scope_active"),
         "gold_count": result.get("gold_count"),
         "gold_gates_unchanged": result.get("gold_gates_unchanged"),
         "quality_relaxation": result.get("quality_relaxation"),
