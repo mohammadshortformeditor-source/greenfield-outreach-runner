@@ -16,12 +16,15 @@ jobs:
     steps:
       - name: Checkout public runner shell
         uses: actions/checkout@v4
+        with:
+          ref: r0007-mission-controller-fix
+          persist-credentials: false
 
       - name: Checkout private GREENFIELD canary
         uses: actions/checkout@v4
         with:
           repository: mohammadshortformeditor-source/greenfield-outreach
-          ref: 372ef98562ab8f3767a120c65aa92bcd5100af88
+          ref: ccf0de6b1122cef398b57d2f53800e0c03a12946
           token: ${{ secrets.GREENFIELD_READ_TOKEN }}
           path: engine
           persist-credentials: false
@@ -36,12 +39,20 @@ jobs:
           python -m pip install --disable-pip-version-check -q ./engine
           python -m pip install --disable-pip-version-check -q 'psycopg[binary]>=3.2,<4'
 
+      - name: Compile mission controller runner
+        run: |
+          python -m py_compile \
+            ops/public_runner/mission_control.py \
+            ops/public_runner/runner_once.py \
+            ops/public_runner/resume_authority_once.py \
+            ops/public_runner/resume_pathfix_canary.py
+
       - name: Resume through canonical bridge canary
         env:
           GFO_ENGINE_ROOT: engine
           GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
           GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
-          GFO_EXPECTED_ACTIVE_COMMIT: cfd2385878cab6faf89cf895551edc0dacdf6303
+          GFO_EXPECTED_ACTIVE_COMMIT: ccf0de6b1122cef398b57d2f53800e0c03a12946
           GFO_PUBLIC_TRIGGER_TITLE: ${{ github.event.issue.title }}
           GFO_RENDER_RUN_TIMEOUT_SECONDS: '1800'
         run: python ops/public_runner/resume_pathfix_canary.py
