@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: mohammadshortformeditor-source/greenfield-outreach
-          ref: cfd2385878cab6faf89cf895551edc0dacdf6303
+          ref: 372ef98562ab8f3767a120c65aa92bcd5100af88
           token: ${{ secrets.GREENFIELD_READ_TOKEN }}
           path: engine
           persist-credentials: false
@@ -51,8 +51,8 @@ jobs:
           GFO_PUBLIC_TRIGGER_TITLE: ${{ github.event.issue.title }}
           GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
           GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
-          GFO_EXPECTED_ACTIVE_COMMIT: cfd2385878cab6faf89cf895551edc0dacdf6303
-          GFO_EXPECTED_ACTIVE_TREE: 65bb6255cbe603384fdcdf5d0a1ec6439e885963
+          GFO_EXPECTED_ACTIVE_COMMIT: 372ef98562ab8f3767a120c65aa92bcd5100af88
+          GFO_EXPECTED_ACTIVE_TREE: 4ff5ec1b6ff1b07a8121c993d1671981ab59e014
           GFO_FREE_TRANSPORT_HTTP_CACHE_MAX_ENTRIES: '1'
           GFO_FREE_TRANSPORT_ROUTE_HIT_CAP: '24'
           GFO_FREE_TRANSPORT_ENRICHMENT_WORKERS: '8'
