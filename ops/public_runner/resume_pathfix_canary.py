@@ -22,10 +22,13 @@ def _trigger() -> tuple[str, int | str]:
     fresh = re.match(r"^\[GFO-PATHFIX\]\s+FIND\s+([1-9][0-9]{0,2})(?:\s|$)", title, flags=re.IGNORECASE)
     if fresh:
         return "FRESH", int(fresh.group(1))
+    exact = re.match(r"^\[GFO-PATHFIX\]\s+REQUEST\s+([A-Za-z0-9_.:-]+)(?:\s|$)", title, flags=re.IGNORECASE)
+    if exact:
+        return "REQUEST", exact.group(1)
     resume = re.match(r"^\[GFO-PATHFIX\]\s+([0-9]+)(?:\s|$)", title, flags=re.IGNORECASE)
     if resume:
         return "RESUME", resume.group(1)
-    raise RuntimeError("trigger must be [GFO-PATHFIX] FIND N or [GFO-PATHFIX] <source github run id>")
+    raise RuntimeError("trigger must be [GFO-PATHFIX] FIND N, [GFO-PATHFIX] <source github run id>, or [GFO-PATHFIX] REQUEST <request_id>")
 
 
 def _fresh_payload(target: int) -> dict:
@@ -91,7 +94,11 @@ def main() -> int:
     if mode == "FRESH":
         payload = _fresh_payload(int(value))
     else:
-        source_request_id = f"pathfix-fresh-find_gold_batch-{value}"
+        source_request_id = (
+            str(value)
+            if mode == "REQUEST"
+            else f"pathfix-fresh-find_gold_batch-{value}"
+        )
         stage1, stage1_payload = _load_pathfix_stage1(transport, source_request_id)
         payload = authority._resume_payload(stage1, stage1_payload)
         payload["request_id"] = f"pathfix-canary-find_gold_batch-{os.environ.get('GITHUB_RUN_ID', uuid.uuid4().hex)}"
@@ -177,6 +184,8 @@ def main() -> int:
         "private_result_persisted": True,
         "request_id": request_id,
         "status": result.get("status"),
+        "error_type": result.get("error_type"),
+        "error": str(result.get("error") or "")[:300] or None,
         "raw_motor_to_gold_bridge_id": result.get("raw_motor_to_gold_bridge_id"),
         "fresh_four_source_contract_verified": contract_verified,
         "four_source_resume_verified": result.get("four_source_resume_verified"),
