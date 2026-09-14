@@ -13,19 +13,42 @@ import runner_once as base
 import resume_authority_once as authority
 
 
-def _source_request_id() -> str:
+def _trigger() -> tuple[str, int | str]:
     title = os.environ.get("GFO_PUBLIC_TRIGGER_TITLE", "").strip()
-    match = re.match(r"^\[GFO-PATHFIX\]\s+([0-9]+)(?:\s|$)", title, flags=re.IGNORECASE)
-    if not match:
-        raise RuntimeError("trigger must be [GFO-PATHFIX] <source github run id>")
-    return f"publicrunner-find_gold_batch-{match.group(1)}"
+    fresh = re.match(r"^\[GFO-PATHFIX\]\s+FIND\s+([1-9][0-9]{0,2})(?:\s|$)", title, flags=re.IGNORECASE)
+    if fresh:
+        return "FRESH", int(fresh.group(1))
+    resume = re.match(r"^\[GFO-PATHFIX\]\s+([0-9]+)(?:\s|$)", title, flags=re.IGNORECASE)
+    if resume:
+        return "RESUME", resume.group(1)
+    raise RuntimeError("trigger must be [GFO-PATHFIX] FIND N or [GFO-PATHFIX] <source github run id>")
+
+
+def _fresh_payload(target: int) -> dict:
+    run_id = os.environ.get("GITHUB_RUN_ID", uuid.uuid4().hex)
+    return {
+        "schema": "gfo.operator-request.v1",
+        "operation": "FIND_GOLD_BATCH",
+        "release_id": "R0007",
+        "request_id": f"pathfix-fresh-find_gold_batch-{run_id}",
+        "send_authority": "NOT_GRANTED",
+        "outbound_side_effects": False,
+        "target_count": target,
+        "goal_profile_id": base.GOAL_PROFILE_ID,
+        "target_constraints_hash": base.TARGET_CONSTRAINTS_HASH,
+    }
 
 
 def main() -> int:
+    mode, value = _trigger()
     transport = base._load_transport()
-    stage1 = authority._load_stage1(transport, _source_request_id())
-    payload = authority._resume_payload(stage1)
-    payload["request_id"] = f"pathfix-canary-find_gold_batch-{os.environ.get('GITHUB_RUN_ID', uuid.uuid4().hex)}"
+    if mode == "FRESH":
+        payload = _fresh_payload(int(value))
+    else:
+        source_request_id = f"publicrunner-find_gold_batch-{value}"
+        stage1 = authority._load_stage1(transport, source_request_id)
+        payload = authority._resume_payload(stage1)
+        payload["request_id"] = f"pathfix-canary-find_gold_batch-{os.environ.get('GITHUB_RUN_ID', uuid.uuid4().hex)}"
     request_id = str(payload["request_id"])
 
     engine_root = Path(os.environ.get("GFO_ENGINE_ROOT", "engine")).resolve()
@@ -62,15 +85,48 @@ def main() -> int:
     finally:
         db.dispose()
 
+    contract_verified = None
+    if mode == "FRESH":
+        external = result.get("external_authority_batch_request")
+        sources = external.get("sources") if isinstance(external, dict) else None
+        active = result.get("active_pre_gold_filter_components")
+        expected_sources = [
+            "CURRENT_GREENFIELD_DB",
+            "GMAIL_SENT",
+            "LEGACY_PRIMARY",
+            "LEGACY_SNAPSHOT",
+        ]
+        expected_active = [
+            "CURRENT_GREENFIELD_DB_EXACT_EMAIL_ACTUAL_OUTREACH",
+            "GMAIL_SENT_EXACT_EMAIL",
+            "LEGACY_PRIMARY_EXACT_EMAIL",
+            "LEGACY_SNAPSHOT_EXACT_EMAIL",
+        ]
+        contract_verified = (
+            result.get("status") == "EXTERNAL_AUTHORITY_BATCH_REQUIRED"
+            and result.get("pre_gold_filter_policy") == "FOUR_SOURCE_PRIOR_CONTACT_ONLY"
+            and result.get("prior_contact_filter_contract") == "FOUR_SOURCE_EXACT_EMAIL_ACTUAL_OUTREACH_ONLY_V1"
+            and sources == expected_sources
+            and active == expected_active
+            and result.get("motor_performs_gold_qualification") is not True
+            and result.get("send_authority") == "NOT_GRANTED"
+        )
+        if not contract_verified:
+            exit_code = 1
+
     base._persist_private_result(transport, payload, result, exit_code)
     safe = {
         "public_runner": "PATHFIX_CANARY_FINISHED",
+        "mode": mode,
         "private_result_persisted": True,
         "request_id": request_id,
         "status": result.get("status"),
         "raw_motor_to_gold_bridge_id": result.get("raw_motor_to_gold_bridge_id"),
+        "fresh_four_source_contract_verified": contract_verified,
         "four_source_resume_verified": result.get("four_source_resume_verified"),
+        "motor_role": result.get("motor_role"),
         "pre_gold_filter_policy": result.get("pre_gold_filter_policy"),
+        "prior_contact_filter_contract": result.get("prior_contact_filter_contract"),
         "pre_gold_path": result.get("pre_gold_path"),
         "gold_count": result.get("gold_count"),
         "gold_gates_unchanged": result.get("gold_gates_unchanged"),
