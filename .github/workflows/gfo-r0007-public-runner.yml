@@ -1,7 +1,6 @@
 name: GFO R0007 Public Runner
 
 on:
-  workflow_dispatch:
   issues:
     types: [opened]
 
@@ -16,8 +15,8 @@ concurrency:
 jobs:
   execute-one:
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.actor == 'mohammadshortformeditor-source' && startsWith(github.event.issue.title, '[GFO-RUN]'))
+      github.actor == 'mohammadshortformeditor-source' &&
+      startsWith(github.event.issue.title, '[GFO-RUN]')
     runs-on: ubuntu-latest
     timeout-minutes: 35
 
@@ -46,9 +45,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ./engine "psycopg[binary]>=3.2,<4"
 
-      - name: Execute exactly one queued R0007 request
+      - name: Execute pinned R0007 request
         env:
           GFO_ENGINE_ROOT: engine
+          GFO_PUBLIC_TRIGGER_TITLE: ${{ github.event.issue.title }}
           GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
           GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
           GFO_EXPECTED_ACTIVE_COMMIT: cfd2385878cab6faf89cf895551edc0dacdf6303
@@ -61,10 +61,10 @@ jobs:
           GFO_RENDER_HEARTBEAT_SECONDS: '20'
           GFO_RENDER_STALE_FAIL_SECONDS: '180'
           GFO_RENDER_HEARTBEAT_DB_GRACE_SECONDS: '240'
-        run: python ops/public_runner/runner_once.py >/dev/null 2>&1
+        run: python ops/public_runner/runner_once.py
 
       - name: Close trigger issue
-        if: always() && github.event_name == 'issues' && github.actor == 'mohammadshortformeditor-source'
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
