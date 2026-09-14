@@ -175,6 +175,25 @@ def _next_motor_payload(mission: dict, *, mission_id: str, wave: int) -> dict:
     }
 
 
+def _authority_survivor_count(payload: dict) -> int:
+    leads = payload.get("leads")
+    receipt = payload.get("external_authority_batch_receipt")
+    if not isinstance(leads, list) or not isinstance(receipt, dict):
+        return 0
+    blocked: set[str] = set()
+    for key in ("gmail", "legacy_primary", "legacy_snapshot"):
+        section = receipt.get(key)
+        if isinstance(section, dict):
+            blocked.update(str(item).strip().lower() for item in section.get("matched_routes", []) if item)
+    survivors = 0
+    for lead in leads:
+        route = lead.get("contact_route") if isinstance(lead, dict) else None
+        value = str(route.get("route_value") or "").strip().lower() if isinstance(route, dict) else ""
+        if value and value not in blocked:
+            survivors += 1
+    return survivors
+
+
 def main() -> int:
     transport = base._load_transport()
     source_request_id = _source_request_id()
@@ -184,22 +203,45 @@ def main() -> int:
     mission_id = str(payload.get("mission_id") or "").strip() or None
     mission_wave = int(payload.get("mission_wave") or 1)
 
-    result, exit_code = base._execute_payload(transport, payload)
+    if mission_id is not None:
+        mission_control.record_authority_done(
+            transport,
+            mission_id=mission_id,
+            wave=mission_wave,
+            request_id=request_id,
+            survivor_count=_authority_survivor_count(payload),
+        )
+
+    execution_error: Exception | None = None
+    try:
+        result, exit_code = base._execute_payload(transport, payload)
+    except Exception as exc:
+        execution_error = exc
+        result = {
+            "status": "FAILED_WITH_PROGRESS",
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:4000],
+            "send_authority": "NOT_GRANTED",
+            "outbound_side_effects": False,
+        }
+        exit_code = 1
     base._persist_private_result(transport, payload, result, exit_code)
 
     mission_state = None
     next_stage1_request_id = None
     next_stage1_status = None
     if mission_id is not None:
-        if exit_code != 0 or result.get("status") == "FAILED_FAIL_CLOSED":
+        if execution_error is not None or exit_code != 0 or result.get("status") in {"FAILED_FAIL_CLOSED", "FAILED_WITH_PROGRESS"}:
             mission_state = mission_control._update(
                 transport,
                 mission_id=mission_id,
-                state="FAILED",
+                state="FAILED_WITH_PROGRESS",
                 status="FAILED",
                 next_action="REPORT_PROGRESS",
                 wave=mission_wave,
                 last_request_id=request_id,
+                last_checkpoint=f"PASS_{mission_wave}_FOUR_SOURCE_DONE",
+                failure_at=f"PASS_{mission_wave}_GOLD",
                 error=str(result.get("error") or "Gold resume failed")[:4000],
             )
         else:
@@ -223,45 +265,23 @@ def main() -> int:
                         wave=mission_wave,
                         found_agency=int(mission_state.get("found_agency") or 0),
                         found_direct=int(mission_state.get("found_direct") or 0),
+                        last_checkpoint=f"PASS_{mission_wave}_GOLD_DONE_STOPPED",
                         stop_requested=True,
                     )
                 else:
                     next_wave = mission_wave + 1
-                    mission_state = mission_control._update(
-                        transport,
-                        mission_id=mission_id,
-                        state="MOTOR_RUNNING",
-                        status="RUNNING",
-                        next_action="RUN_MOTOR",
-                        wave=next_wave,
-                        found_agency=int(mission_state.get("found_agency") or 0),
-                        found_direct=int(mission_state.get("found_direct") or 0),
-                    )
                     mission = mission_control.load_mission(transport, mission_id=mission_id)
                     next_payload = _next_motor_payload(mission, mission_id=mission_id, wave=next_wave)
                     next_stage1_request_id = str(next_payload["request_id"])
-                    next_result, next_exit = base._execute_payload(transport, next_payload)
-                    base._persist_private_result(transport, next_payload, next_result, next_exit)
+                    next_result, next_exit, mission_state = base._run_motor_until_boundary(
+                        transport,
+                        mission_id=mission_id,
+                        first_payload=next_payload,
+                        first_wave=next_wave,
+                    )
                     next_stage1_status = next_result.get("status")
-                    if next_exit == 0 and next_result.get("status") != "FAILED_FAIL_CLOSED":
-                        mission_state = mission_control.record_stage1(
-                            transport,
-                            mission_id=mission_id,
-                            wave=next_wave,
-                            request_id=next_stage1_request_id,
-                            stage1_result=next_result,
-                        )
-                    else:
-                        mission_state = mission_control._update(
-                            transport,
-                            mission_id=mission_id,
-                            state="FAILED",
-                            status="FAILED",
-                            next_action="REPORT_PROGRESS",
-                            wave=next_wave,
-                            last_request_id=next_stage1_request_id,
-                            error=str(next_result.get("error") or "next Motor wave failed")[:4000],
-                        )
+                    if next_exit != 0:
+                        exit_code = next_exit
 
     safe = {
         "public_runner": "AUTHORITY_RESUME_FINISHED",
@@ -278,6 +298,11 @@ def main() -> int:
         "mission_id": mission_id,
         "mission_state": mission_state.get("state") if mission_state else None,
         "mission_found_new_gold": mission_state.get("found_new_gold") if mission_state else None,
+        "mission_target": mission_state.get("mission_target") if mission_state else None,
+        "mission_deficit": mission_state.get("deficit") if mission_state else None,
+        "mission_wave": mission_state.get("wave") if mission_state else None,
+        "last_checkpoint": mission_state.get("last_checkpoint") if mission_state else None,
+        "failure_at": mission_state.get("failure_at") if mission_state else None,
         "mission_next_action": mission_state.get("next_action") if mission_state else None,
         "next_stage1_request_id": next_stage1_request_id,
         "next_stage1_status": next_stage1_status,

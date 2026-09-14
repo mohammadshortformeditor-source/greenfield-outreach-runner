@@ -230,10 +230,51 @@ def _run_motor_until_boundary(
                 "outbound_side_effects": False,
             }, 0, stopped
 
-        result, exit_code = _execute_payload(transport, payload)
+        mission_control._update(
+            transport,
+            mission_id=mission_id,
+            state="MOTOR_RUNNING",
+            status="RUNNING",
+            next_action="RUN_MOTOR",
+            wave=wave,
+            last_request_id=str(payload["request_id"]),
+            last_checkpoint=f"PASS_{wave}_STARTED",
+        )
+        try:
+            result, exit_code = _execute_payload(transport, payload)
+        except Exception as exc:
+            result = {
+                "status": "FAILED_WITH_PROGRESS",
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:4000],
+                "send_authority": "NOT_GRANTED",
+                "outbound_side_effects": False,
+            }
+            failed = mission_control._update(
+                transport,
+                mission_id=mission_id,
+                state="FAILED_WITH_PROGRESS",
+                status="FAILED",
+                next_action="REPORT_PROGRESS",
+                wave=wave,
+                last_request_id=str(payload["request_id"]),
+                last_checkpoint=f"PASS_{wave}_STARTED",
+                failure_at=f"PASS_{wave}_MOTOR",
+                error=str(exc)[:4000],
+            )
+            return result, 1, failed
         _persist_private_result(transport, payload, result, exit_code)
         waves_run += 1
         request_id = str(payload["request_id"])
+
+        latest_after_motor = mission_control.load_mission(transport, mission_id=mission_id)
+        if mission_control.stop_is_requested(latest_after_motor):
+            stopped = _stop_mission_now(transport, mission_id=mission_id, wave=wave)
+            return {
+                "status": "STOPPED_BY_USER",
+                "send_authority": "NOT_GRANTED",
+                "outbound_side_effects": False,
+            }, 0, stopped
 
         if exit_code != 0 or result.get("status") == "FAILED_FAIL_CLOSED":
             failed = mission_control._update(
@@ -244,6 +285,8 @@ def _run_motor_until_boundary(
                 next_action="REPORT_PROGRESS",
                 wave=wave,
                 last_request_id=request_id,
+                last_checkpoint=f"PASS_{wave}_MOTOR_FAILED",
+                failure_at=f"PASS_{wave}_MOTOR",
                 error=str(result.get("error") or "Motor execution failed")[:4000],
             )
             return result, exit_code or 1, failed
@@ -277,6 +320,7 @@ def _run_motor_until_boundary(
             wave=wave,
             last_request_id=request_id,
             candidate_count=len(result.get("engine_candidates") or []) if isinstance(result.get("engine_candidates"), list) else 0,
+            last_checkpoint=f"PASS_{wave}_MOTOR_DONE_NO_AUTHORITY",
         )
         if waves_run >= cap:
             checkpoint = mission_control._update(
@@ -287,6 +331,7 @@ def _run_motor_until_boundary(
                 next_action="RUN_MOTOR",
                 wave=wave,
                 last_request_id=request_id,
+                last_checkpoint=f"PASS_{wave}_MOTOR_DONE_NO_AUTHORITY",
             )
             return result, 0, checkpoint
 
@@ -307,6 +352,7 @@ def _run_motor_until_boundary(
             status="RUNNING",
             next_action="RUN_MOTOR",
             wave=wave,
+            last_checkpoint=f"PASS_{wave}_STARTED",
         )
         latest = mission_control.load_mission(transport, mission_id=mission_id)
         payload = _motor_payload_for_wave(
@@ -363,6 +409,11 @@ def main() -> int:
         "mission_id": mission_id,
         "mission_state": mission_state.get("state") if mission_state else None,
         "mission_found_new_gold": mission_state.get("found_new_gold") if mission_state else None,
+        "mission_target": mission_state.get("mission_target") if mission_state else None,
+        "mission_deficit": mission_state.get("deficit") if mission_state else None,
+        "mission_wave": mission_state.get("wave") if mission_state else None,
+        "last_checkpoint": mission_state.get("last_checkpoint") if mission_state else None,
+        "failure_at": mission_state.get("failure_at") if mission_state else None,
         "mission_next_action": mission_state.get("next_action") if mission_state else None,
         "exit_code": exit_code,
     }

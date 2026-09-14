@@ -133,9 +133,13 @@ def ensure_mission(
                 "state": "RUNNING",
                 "wave": 1,
                 "found_new_gold": 0,
+                "mission_new_gold": 0,
+                "mission_target": requested_new_gold,
+                "deficit": requested_new_gold,
                 "found_agency": 0,
                 "found_direct": 0,
                 "last_request_id": source_request_id,
+                "last_checkpoint": "MISSION_STARTED",
                 "next_action": "RUN_MOTOR",
                 "stop_requested": False,
             }
@@ -226,6 +230,9 @@ def _update(
     found_direct: int | None = None,
     last_request_id: str | None = None,
     candidate_count: int | None = None,
+    survivor_count: int | None = None,
+    last_checkpoint: str | None = None,
+    failure_at: str | None = None,
     error: str | None = None,
     stop_requested: bool | None = None,
 ) -> dict[str, Any]:
@@ -254,8 +261,18 @@ def _update(
                 result["last_request_id"] = last_request_id
             if candidate_count is not None:
                 result["candidate_count"] = int(candidate_count)
+            if survivor_count is not None:
+                result["survivor_count"] = int(survivor_count)
+            if last_checkpoint is not None:
+                result["last_checkpoint"] = str(last_checkpoint)
+            if failure_at is not None:
+                result["failure_at"] = str(failure_at)
             if stop_requested is not None:
                 result["stop_requested"] = bool(stop_requested)
+            target = int(_json_object(row.get("payload")).get("requested_new_gold") or 0)
+            result["mission_target"] = target
+            result["mission_new_gold"] = int(result["found_new_gold"])
+            result["deficit"] = max(target - int(result["found_new_gold"]), 0)
             selected_status = status or str(row.get("status") or "RUNNING")
             if selected_status not in _CANONICAL_QUEUE_STATUSES:
                 raise RuntimeError(f"mission controller attempted invalid queue status: {selected_status}")
@@ -306,6 +323,7 @@ def record_stage1(
             wave=wave,
             last_request_id=request_id,
             candidate_count=candidate_count,
+            last_checkpoint=f"PASS_{wave}_MOTOR_DONE",
         )
     if state == "TARGET_MET":
         return _update(
@@ -316,6 +334,7 @@ def record_stage1(
             next_action="NONE",
             wave=wave,
             last_request_id=request_id,
+            last_checkpoint=f"PASS_{wave}_MOTOR_DONE_TARGET_MET",
         )
     return _update(
         transport,
@@ -326,7 +345,31 @@ def record_stage1(
         wave=wave,
         last_request_id=request_id,
         candidate_count=candidate_count,
+        last_checkpoint=f"PASS_{wave}_MOTOR_DONE",
+        failure_at=f"PASS_{wave}_MOTOR",
         error=f"Motor stage ended with {state or 'UNKNOWN'}",
+    )
+
+
+def record_authority_done(
+    transport,
+    *,
+    mission_id: str,
+    wave: int,
+    request_id: str,
+    survivor_count: int,
+) -> dict[str, Any]:
+    """Checkpoint a real four-source receipt immediately before canonical Gold."""
+    return _update(
+        transport,
+        mission_id=mission_id,
+        state="FOUR_SOURCE_DONE",
+        status="RUNNING",
+        next_action="RUN_GOLD",
+        wave=wave,
+        last_request_id=request_id,
+        survivor_count=survivor_count,
+        last_checkpoint=f"PASS_{wave}_FOUR_SOURCE_DONE",
     )
 
 
@@ -355,6 +398,7 @@ def record_gold_result(
             found_agency=found_agency,
             found_direct=found_direct,
             last_request_id=request_id,
+            last_checkpoint=f"PASS_{wave}_GOLD_DONE_TARGET_MET",
         )
     if stop_is_requested(current):
         return _update(
@@ -367,6 +411,7 @@ def record_gold_result(
             found_agency=found_agency,
             found_direct=found_direct,
             last_request_id=request_id,
+            last_checkpoint=f"PASS_{wave}_GOLD_DONE_STOPPED",
             stop_requested=True,
         )
     return _update(
@@ -379,6 +424,7 @@ def record_gold_result(
         found_agency=found_agency,
         found_direct=found_direct,
         last_request_id=request_id,
+        last_checkpoint=f"PASS_{wave}_GOLD_DONE",
     )
 
 
@@ -400,5 +446,6 @@ def request_stop(transport, *, mission_id: str) -> dict[str, Any]:
         state="STOP_REQUESTED",
         status="RUNNING",
         next_action="STOP_AFTER_CURRENT_SAFE_STAGE",
+        last_checkpoint=str(result.get("last_checkpoint") or "MISSION_STARTED"),
         stop_requested=True,
     )

@@ -8,6 +8,7 @@ from sqlalchemy import text
 
 import mission_control
 import runner_once
+import stop_mission
 
 
 def _cleanup(transport, mission_id: str) -> None:
@@ -46,7 +47,16 @@ def main() -> int:
             requested_new_gold=2,
             source_request_id=source_request_id,
         )
-        stop_state = mission_control.request_stop(transport, mission_id=mission_id)
+        original_title = os.environ.get("GFO_PUBLIC_TRIGGER_TITLE")
+        os.environ["GFO_PUBLIC_TRIGGER_TITLE"] = f"[GFO-STOP] {mission_id}"
+        try:
+            stop_handler_exit = stop_mission.main()
+        finally:
+            if original_title is None:
+                os.environ.pop("GFO_PUBLIC_TRIGGER_TITLE", None)
+            else:
+                os.environ["GFO_PUBLIC_TRIGGER_TITLE"] = original_title
+        stop_state = mission_control.load_mission(transport, mission_id=mission_id)["result"]
         runner_once._execute_payload = forbidden_motor
         result, exit_code, final_state = runner_once._run_motor_until_boundary(
             transport,
@@ -66,6 +76,7 @@ def main() -> int:
         verified = (
             stop_state.get("state") == "STOP_REQUESTED"
             and stop_state.get("stop_requested") is True
+            and stop_handler_exit == 0
             and motor_called is False
             and exit_code == 0
             and result.get("status") == "STOPPED_BY_USER"
@@ -77,6 +88,7 @@ def main() -> int:
             "stop_gate_verified": verified,
             "motor_called_after_stop": motor_called,
             "initial_stop_state": stop_state.get("state"),
+            "external_stop_handler_exit": stop_handler_exit,
             "final_state": final_state.get("state"),
             "found_new_gold": final_state.get("found_new_gold"),
             "next_action": final_state.get("next_action"),
