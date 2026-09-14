@@ -61,7 +61,7 @@ jobs:
           GFO_RENDER_HEARTBEAT_SECONDS: '20'
           GFO_RENDER_STALE_FAIL_SECONDS: '180'
           GFO_RENDER_HEARTBEAT_DB_GRACE_SECONDS: '240'
-        run: python ops/public_runner/runner_once.py
+        run: python ops/public_runner/runner_once.py >/dev/null 2>&1
 
       - name: Close trigger issue
         if: always() && github.event_name == 'issues' && github.actor == 'mohammadshortformeditor-source'
