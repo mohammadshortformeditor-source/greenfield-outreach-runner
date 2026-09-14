@@ -1,0 +1,70 @@
+name: GFO R0007 Mission Continue
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: gfo-r0007-mission-controller
+  cancel-in-progress: false
+
+jobs:
+  continue-mission:
+    if: >-
+      github.actor == 'mohammadshortformeditor-source' &&
+      startsWith(github.event.issue.title, '[GFO-CONTINUE]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout public runner shell
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Checkout pinned private GREENFIELD engine
+        uses: actions/checkout@v4
+        with:
+          repository: mohammadshortformeditor-source/greenfield-outreach
+          ref: ccf0de6b1122cef398b57d2f53800e0c03a12946
+          token: ${{ secrets.GREENFIELD_READ_TOKEN }}
+          path: engine
+          persist-credentials: false
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install runtime dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -q ./engine
+          python -m pip install --disable-pip-version-check -q 'psycopg[binary]>=3.2,<4'
+
+      - name: Continue mission from checkpoint
+        env:
+          GFO_ENGINE_ROOT: engine
+          GFO_PUBLIC_TRIGGER_TITLE: ${{ github.event.issue.title }}
+          GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
+          GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
+          GFO_EXPECTED_ACTIVE_COMMIT: ccf0de6b1122cef398b57d2f53800e0c03a12946
+          GFO_EXPECTED_ACTIVE_TREE: 9419007828ccc18550f4c916f0e6ebc6387370d0
+          GFO_FREE_TRANSPORT_HTTP_CACHE_MAX_ENTRIES: '1'
+          GFO_FREE_TRANSPORT_ROUTE_HIT_CAP: '24'
+          GFO_FREE_TRANSPORT_ENRICHMENT_WORKERS: '8'
+          GFO_FREE_TRANSPORT_HTTP_TIMEOUT_SECONDS: '3.0'
+          GFO_RENDER_RUN_TIMEOUT_SECONDS: '1800'
+          GFO_RENDER_HEARTBEAT_SECONDS: '20'
+          GFO_RENDER_STALE_FAIL_SECONDS: '180'
+          GFO_RENDER_HEARTBEAT_DB_GRACE_SECONDS: '240'
+        run: python ops/public_runner/continue_mission_once.py
+
+      - name: Close trigger issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue close '${{ github.event.issue.number }}' --repo '${{ github.repository }}' || true
