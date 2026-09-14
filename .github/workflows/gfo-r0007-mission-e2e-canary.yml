@@ -41,7 +41,7 @@ jobs:
           test "$(git -C engine rev-parse 'HEAD^{tree}')" = 9419007828ccc18550f4c916f0e6ebc6387370d0
       - name: Install dependencies
         run: |
-          python -m pip install --disable-pip-version-check -q ./engine
+          python -m pip install --disable-pip-version-check -q -e ./engine
           python -m pip install --disable-pip-version-check -q 'psycopg[binary]>=3.2,<4'
       - name: Start FIND 2 mission
         env:
@@ -89,7 +89,7 @@ jobs:
           python-version: '3.13'
       - name: Install dependencies
         run: |
-          python -m pip install --disable-pip-version-check -q ./engine
+          python -m pip install --disable-pip-version-check -q -e ./engine
           python -m pip install --disable-pip-version-check -q 'psycopg[binary]>=3.2,<4'
       - name: Resume same authority batch, then continue mission automatically
         env:
@@ -140,7 +140,7 @@ jobs:
           python-version: '3.13'
       - name: Install dependencies
         run: |
-          python -m pip install --disable-pip-version-check -q ./engine
+          python -m pip install --disable-pip-version-check -q -e ./engine
           python -m pip install --disable-pip-version-check -q 'psycopg[binary]>=3.2,<4'
       - name: Continue from persisted Motor checkpoint
         env:
