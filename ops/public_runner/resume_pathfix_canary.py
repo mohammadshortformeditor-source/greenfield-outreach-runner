@@ -29,30 +29,20 @@ def main() -> int:
     request_id = str(payload["request_id"])
 
     engine_root = Path(os.environ.get("GFO_ENGINE_ROOT", "engine")).resolve()
-    # GREENFIELD uses a src layout and several runtime config paths are resolved from the
-    # source checkout. Load the canary from that checkout, never from site-packages.
     os.chdir(engine_root)
     sys.path.insert(0, str(engine_root / "src"))
     sys.path.insert(0, str(engine_root))
 
-    import outreach.runtime.r0007_cheap_first_wavefront as cheap_first
-    import outreach.runtime.r0007_raw_motor_to_gold_bridge as raw_bridge
-    from outreach.runtime.r0007_four_source_to_gold_fix import (
-        R0007FourSourceDirectToGoldOperatorExecutionService,
+    from outreach.runtime.r0007_raw_motor_to_gold_bridge import (
+        R0007RawMotorToGoldBridgeOperatorExecutionService,
     )
-
-    # Match the existing free-transport tuning without changing motor/Gold logic.
-    cheap_first.MAX_ENGINE_WORKERS = 8
-    cheap_first.DEFAULT_HTTP_TIMEOUT_SECONDS = 3.0
-    raw_bridge.TRANSPORT_SAFE_HTTP_CACHE_MAX_ENTRIES = 4
-    raw_bridge.TRANSPORT_SAFE_ROUTE_HIT_CAP = 72
 
     dsn = transport.norm(transport.lease("FIND_GOLD_BATCH", request_id))
     db = create_engine(dsn, future=True, pool_pre_ping=True)
     try:
         with db.begin() as connection:
             result = dict(
-                R0007FourSourceDirectToGoldOperatorExecutionService().execute(
+                R0007RawMotorToGoldBridgeOperatorExecutionService().execute(
                     connection,
                     payload,
                 )
@@ -78,11 +68,11 @@ def main() -> int:
         "private_result_persisted": True,
         "request_id": request_id,
         "status": result.get("status"),
-        "four_source_to_gold_fix_id": result.get("four_source_to_gold_fix_id"),
-        "authority_survivors": result.get("external_authority_survivor_count"),
-        "gold_entry_count": result.get("gold_entry_count"),
-        "gold_count": result.get("gold_count"),
+        "raw_motor_to_gold_bridge_id": result.get("raw_motor_to_gold_bridge_id"),
+        "four_source_resume_verified": result.get("four_source_resume_verified"),
         "pre_gold_filter_policy": result.get("pre_gold_filter_policy"),
+        "pre_gold_path": result.get("pre_gold_path"),
+        "gold_count": result.get("gold_count"),
         "gold_gates_unchanged": result.get("gold_gates_unchanged"),
         "quality_relaxation": result.get("quality_relaxation"),
         "send_authority": result.get("send_authority", "NOT_GRANTED"),
