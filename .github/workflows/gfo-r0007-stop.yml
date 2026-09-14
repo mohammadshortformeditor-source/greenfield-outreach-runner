@@ -42,7 +42,7 @@ jobs:
 
       - name: Install runtime dependencies
         run: |
-          python -m pip install --disable-pip-version-check -q ./engine
+          python -m pip install --disable-pip-version-check -q -e ./engine
           python -m pip install --disable-pip-version-check -q 'psycopg[binary]>=3.2,<4'
 
       - name: Request mission STOP
