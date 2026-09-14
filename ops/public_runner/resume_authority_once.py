@@ -6,7 +6,6 @@ import re
 import subprocess
 import tempfile
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import text
@@ -61,6 +60,47 @@ def _load_stage1(transport, source_request_id: str) -> dict:
     return result
 
 
+def _verified_authority_receipt(stage1: dict, routes: list, primary: dict, snapshot: dict) -> dict:
+    authority_receipt = stage1.get("verified_external_authority_batch_receipt")
+    if not isinstance(authority_receipt, dict):
+        raise RuntimeError("verified external authority receipt missing; refusing synthetic authority")
+    if authority_receipt.get("schema") != "gfo.r0007.external-authority-batch-receipt.v1":
+        raise RuntimeError("verified external authority receipt schema mismatch")
+    if authority_receipt.get("queried_routes") != routes:
+        raise RuntimeError("verified external authority queried_routes mismatch")
+
+    gmail = authority_receipt.get("gmail")
+    legacy_primary = authority_receipt.get("legacy_primary")
+    legacy_snapshot = authority_receipt.get("legacy_snapshot")
+    verification = authority_receipt.get("verification")
+    if not all(isinstance(item, dict) for item in (gmail, legacy_primary, legacy_snapshot, verification)):
+        raise RuntimeError("verified external authority receipt incomplete")
+    if gmail.get("provider") != "CHATGPT_WORK_GMAIL_CONNECTOR" or gmail.get("mode") != "BATCH_EXACT_RECIPIENT_OR_QUERY":
+        raise RuntimeError("verified Gmail authority binding mismatch")
+    if not str(gmail.get("receipt_id") or "").strip():
+        raise RuntimeError("verified Gmail receipt id missing")
+    if legacy_primary.get("spreadsheet_id") != primary.get("spreadsheet_id") or legacy_primary.get("sheet") != primary.get("sheet"):
+        raise RuntimeError("verified legacy primary binding mismatch")
+    if legacy_snapshot.get("spreadsheet_id") != snapshot.get("spreadsheet_id") or legacy_snapshot.get("sheet") != snapshot.get("sheet"):
+        raise RuntimeError("verified legacy snapshot binding mismatch")
+    if int(legacy_primary.get("contacted_rows_indexed") or 0) < 480:
+        raise RuntimeError("verified legacy primary scan too small")
+    if int(legacy_snapshot.get("contacted_rows_indexed") or 0) < 480:
+        raise RuntimeError("verified legacy snapshot scan too small")
+    for surface in (gmail, legacy_primary, legacy_snapshot):
+        if not isinstance(surface.get("matched_routes"), list):
+            raise RuntimeError("verified authority matched_routes missing")
+        if any(route not in routes for route in surface["matched_routes"]):
+            raise RuntimeError("verified authority contains route outside candidate batch")
+    if verification.get("gmail_real_connector_query") is not True:
+        raise RuntimeError("real Gmail authority verification missing")
+    if verification.get("legacy_primary_real_sheet_scan") is not True or verification.get("legacy_snapshot_real_sheet_scan") is not True:
+        raise RuntimeError("real legacy authority verification missing")
+    if verification.get("send_authority") != "NOT_GRANTED" or verification.get("outbound_side_effects") is not False:
+        raise RuntimeError("verified authority safety binding mismatch")
+    return authority_receipt
+
+
 def _resume_payload(stage1: dict) -> dict:
     leads = stage1.get("engine_candidates")
     receipt = stage1.get("engine_execution_receipt")
@@ -78,31 +118,7 @@ def _resume_payload(stage1: dict) -> dict:
     if not isinstance(primary, dict) or not isinstance(snapshot, dict):
         raise RuntimeError("stage1 legacy authority bindings missing")
 
-    checked_at = datetime.now(timezone.utc).isoformat()
-    authority_receipt = {
-        "schema": "gfo.r0007.external-authority-batch-receipt.v1",
-        "checked_at": checked_at,
-        "queried_routes": routes,
-        "gmail": {
-            "mode": "BATCH_EXACT_RECIPIENT_OR_QUERY",
-            "provider": "CHATGPT_WORK_GMAIL_CONNECTOR",
-            "receipt_id": "gfo-chatgpt-gmail-batch-zero-match-20260914",
-            "matched_routes": [],
-        },
-        "legacy_primary": {
-            "spreadsheet_id": primary.get("spreadsheet_id"),
-            "sheet": primary.get("sheet"),
-            "contacted_rows_indexed": 485,
-            "matched_routes": [],
-        },
-        "legacy_snapshot": {
-            "spreadsheet_id": snapshot.get("spreadsheet_id"),
-            "sheet": snapshot.get("sheet"),
-            "contacted_rows_indexed": 481,
-            "matched_routes": [],
-        },
-    }
-
+    authority_receipt = _verified_authority_receipt(stage1, routes, primary, snapshot)
     target_count = int(receipt.get("search_run_requested_count") or stage1.get("target_count") or 10)
     return {
         "schema": "gfo.operator-request.v1",
@@ -161,6 +177,7 @@ def main() -> int:
         "request_id": request_id,
         "operation": "FIND_GOLD_BATCH",
         "status": result.get("status"),
+        "gold_count": len(result.get("gold_leads") or result.get("gold") or result.get("leads") or []),
         "gold_gates_unchanged": result.get("gold_gates_unchanged"),
         "quality_relaxation": result.get("quality_relaxation"),
         "send_authority": result.get("send_authority", "NOT_GRANTED"),
