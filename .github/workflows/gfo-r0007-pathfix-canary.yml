@@ -54,6 +54,10 @@ jobs:
           GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
           GFO_EXPECTED_ACTIVE_COMMIT: ccf0de6b1122cef398b57d2f53800e0c03a12946
           GFO_PUBLIC_TRIGGER_TITLE: ${{ github.event.issue.title }}
+          GFO_FREE_TRANSPORT_HTTP_CACHE_MAX_ENTRIES: '1'
+          GFO_FREE_TRANSPORT_ROUTE_HIT_CAP: '24'
+          GFO_FREE_TRANSPORT_ENRICHMENT_WORKERS: '8'
+          GFO_FREE_TRANSPORT_HTTP_TIMEOUT_SECONDS: '3.0'
           GFO_RENDER_RUN_TIMEOUT_SECONDS: '1800'
         run: python ops/public_runner/resume_pathfix_canary.py
 
