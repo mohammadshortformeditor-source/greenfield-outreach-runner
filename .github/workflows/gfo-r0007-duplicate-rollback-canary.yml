@@ -52,6 +52,8 @@ jobs:
           GFO_ENGINE_ROOT: engine
           GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
           GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
+          GFO_EXPECTED_ACTIVE_COMMIT: ccf0de6b1122cef398b57d2f53800e0c03a12946
+          GFO_EXPECTED_ACTIVE_TREE: 9419007828ccc18550f4c916f0e6ebc6387370d0
           GFO_PUBLIC_TRIGGER_TITLE: ${{ github.event.issue.title }}
         run: python ops/public_runner/duplicate_gold_rollback_canary.py
 
