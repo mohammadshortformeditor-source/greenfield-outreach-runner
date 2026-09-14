@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: mohammadshortformeditor-source/greenfield-outreach
-          ref: ae241246bb64f17e25ce6cbaabde9cac6be11943
+          ref: aecdefa50cf1fc374eb41762292858dae55647cb
           token: ${{ secrets.GREENFIELD_READ_TOKEN }}
           path: engine
           persist-credentials: false
