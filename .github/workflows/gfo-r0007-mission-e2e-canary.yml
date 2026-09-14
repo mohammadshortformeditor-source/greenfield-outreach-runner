@@ -1,0 +1,169 @@
+name: GFO R0007 Mission E2E Canary
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: gfo-r0007-mission-e2e-canary
+  cancel-in-progress: false
+
+jobs:
+  start:
+    if: github.event.issue.user.login == 'mohammadshortformeditor-source' && startsWith(github.event.issue.title, '[GFO-E2E] FIND 2')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout pinned experimental runner
+        uses: actions/checkout@v4
+        with:
+          ref: 388a70142105acd141effb78072c006c68ba19fc
+          persist-credentials: false
+      - name: Checkout pinned experimental GREENFIELD engine
+        uses: actions/checkout@v4
+        with:
+          repository: mohammadshortformeditor-source/greenfield-outreach
+          ref: ccf0de6b1122cef398b57d2f53800e0c03a12946
+          token: ${{ secrets.GREENFIELD_READ_TOKEN }}
+          path: engine
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Verify immutable test pins
+        run: |
+          test "$(git rev-parse HEAD)" = 388a70142105acd141effb78072c006c68ba19fc
+          test "$(git -C engine rev-parse HEAD)" = ccf0de6b1122cef398b57d2f53800e0c03a12946
+          test "$(git -C engine rev-parse 'HEAD^{tree}')" = 9419007828ccc18550f4c916f0e6ebc6387370d0
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -q ./engine
+          python -m pip install --disable-pip-version-check -q 'psycopg[binary]>=3.2,<4'
+      - name: Start FIND 2 mission
+        env:
+          GFO_ENGINE_ROOT: engine
+          GFO_PUBLIC_TRIGGER_TITLE: '[GFO-RUN] FIND 2'
+          GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
+          GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
+          GFO_EXPECTED_ACTIVE_COMMIT: ccf0de6b1122cef398b57d2f53800e0c03a12946
+          GFO_EXPECTED_ACTIVE_TREE: 9419007828ccc18550f4c916f0e6ebc6387370d0
+          GFO_FREE_TRANSPORT_HTTP_CACHE_MAX_ENTRIES: '1'
+          GFO_FREE_TRANSPORT_ROUTE_HIT_CAP: '24'
+          GFO_FREE_TRANSPORT_ENRICHMENT_WORKERS: '8'
+          GFO_FREE_TRANSPORT_HTTP_TIMEOUT_SECONDS: '3.0'
+          GFO_RENDER_RUN_TIMEOUT_SECONDS: '1800'
+          GFO_RENDER_HEARTBEAT_SECONDS: '20'
+          GFO_RENDER_STALE_FAIL_SECONDS: '180'
+          GFO_RENDER_HEARTBEAT_DB_GRACE_SECONDS: '240'
+        run: python ops/public_runner/runner_once.py
+      - name: Close trigger issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue close '${{ github.event.issue.number }}' --repo '${{ github.repository }}' || true
+
+  resume:
+    if: github.event.issue.user.login == 'mohammadshortformeditor-source' && startsWith(github.event.issue.title, '[GFO-E2E-RESUME] REQUEST ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout pinned experimental runner
+        uses: actions/checkout@v4
+        with:
+          ref: 388a70142105acd141effb78072c006c68ba19fc
+          persist-credentials: false
+      - name: Checkout pinned experimental GREENFIELD engine
+        uses: actions/checkout@v4
+        with:
+          repository: mohammadshortformeditor-source/greenfield-outreach
+          ref: ccf0de6b1122cef398b57d2f53800e0c03a12946
+          token: ${{ secrets.GREENFIELD_READ_TOKEN }}
+          path: engine
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -q ./engine
+          python -m pip install --disable-pip-version-check -q 'psycopg[binary]>=3.2,<4'
+      - name: Resume same authority batch, then continue mission automatically
+        env:
+          GFO_ENGINE_ROOT: engine
+          RAW_TRIGGER_TITLE: ${{ github.event.issue.title }}
+          GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
+          GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
+          GFO_EXPECTED_ACTIVE_COMMIT: ccf0de6b1122cef398b57d2f53800e0c03a12946
+          GFO_EXPECTED_ACTIVE_TREE: 9419007828ccc18550f4c916f0e6ebc6387370d0
+          GFO_FREE_TRANSPORT_HTTP_CACHE_MAX_ENTRIES: '1'
+          GFO_FREE_TRANSPORT_ROUTE_HIT_CAP: '24'
+          GFO_FREE_TRANSPORT_ENRICHMENT_WORKERS: '8'
+          GFO_FREE_TRANSPORT_HTTP_TIMEOUT_SECONDS: '3.0'
+          GFO_RENDER_RUN_TIMEOUT_SECONDS: '1800'
+          GFO_RENDER_HEARTBEAT_SECONDS: '20'
+          GFO_RENDER_STALE_FAIL_SECONDS: '180'
+          GFO_RENDER_HEARTBEAT_DB_GRACE_SECONDS: '240'
+        run: |
+          source_request_id="${RAW_TRIGGER_TITLE#"[GFO-E2E-RESUME] REQUEST "}"
+          export GFO_PUBLIC_TRIGGER_TITLE="[GFO-RESUME] REQUEST ${source_request_id}"
+          python ops/public_runner/resume_authority_once.py
+      - name: Close trigger issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue close '${{ github.event.issue.number }}' --repo '${{ github.repository }}' || true
+
+  continue:
+    if: github.event.issue.user.login == 'mohammadshortformeditor-source' && startsWith(github.event.issue.title, '[GFO-E2E-CONTINUE] ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout pinned experimental runner
+        uses: actions/checkout@v4
+        with:
+          ref: 388a70142105acd141effb78072c006c68ba19fc
+          persist-credentials: false
+      - name: Checkout pinned experimental GREENFIELD engine
+        uses: actions/checkout@v4
+        with:
+          repository: mohammadshortformeditor-source/greenfield-outreach
+          ref: ccf0de6b1122cef398b57d2f53800e0c03a12946
+          token: ${{ secrets.GREENFIELD_READ_TOKEN }}
+          path: engine
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -q ./engine
+          python -m pip install --disable-pip-version-check -q 'psycopg[binary]>=3.2,<4'
+      - name: Continue from persisted Motor checkpoint
+        env:
+          GFO_ENGINE_ROOT: engine
+          RAW_TRIGGER_TITLE: ${{ github.event.issue.title }}
+          GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
+          GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
+          GFO_EXPECTED_ACTIVE_COMMIT: ccf0de6b1122cef398b57d2f53800e0c03a12946
+          GFO_EXPECTED_ACTIVE_TREE: 9419007828ccc18550f4c916f0e6ebc6387370d0
+          GFO_FREE_TRANSPORT_HTTP_CACHE_MAX_ENTRIES: '1'
+          GFO_FREE_TRANSPORT_ROUTE_HIT_CAP: '24'
+          GFO_FREE_TRANSPORT_ENRICHMENT_WORKERS: '8'
+          GFO_FREE_TRANSPORT_HTTP_TIMEOUT_SECONDS: '3.0'
+          GFO_RENDER_RUN_TIMEOUT_SECONDS: '1800'
+          GFO_RENDER_HEARTBEAT_SECONDS: '20'
+          GFO_RENDER_STALE_FAIL_SECONDS: '180'
+          GFO_RENDER_HEARTBEAT_DB_GRACE_SECONDS: '240'
+        run: |
+          mission_id="${RAW_TRIGGER_TITLE#"[GFO-E2E-CONTINUE] "}"
+          export GFO_PUBLIC_TRIGGER_TITLE="[GFO-CONTINUE] ${mission_id}"
+          python ops/public_runner/continue_mission_once.py
+      - name: Close trigger issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue close '${{ github.event.issue.number }}' --repo '${{ github.repository }}' || true
