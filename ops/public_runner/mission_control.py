@@ -7,9 +7,12 @@ from typing import Any, Mapping
 from sqlalchemy import text
 
 QUEUE = "gfo_render_operator_queue"
-MISSION_OPERATION = "FIND_GOLD_MISSION"
-MISSION_SCHEMA = "gfo.r0007.find-gold-mission.v1"
+# Mission checkpoints deliberately reuse the existing canonical queue contract.
+# The request_id prefix + mission_contract distinguish controller rows from engine rows.
+MISSION_OPERATION = "FIND_GOLD_BATCH"
+MISSION_SCHEMA = "gfo.operator-request.v1"
 MISSION_CONTRACT = "REQUEST_SCOPED_NEW_GOLD_60_40_V1"
+_CANONICAL_QUEUE_STATUSES = {"PENDING", "RUNNING", "SUCCEEDED", "FAILED"}
 
 
 def balanced_targets(total: int) -> tuple[int, int]:
@@ -68,6 +71,7 @@ def _load_locked(connection, mission_id: str) -> Mapping[str, Any] | None:
             FROM {QUEUE}
             WHERE request_id = :request_id
               AND operation = :operation
+              AND payload->>'mission_contract' = :contract
             ORDER BY created_at DESC
             LIMIT 1
             FOR UPDATE
@@ -76,6 +80,7 @@ def _load_locked(connection, mission_id: str) -> Mapping[str, Any] | None:
         {
             "request_id": mission_request_id(mission_id),
             "operation": MISSION_OPERATION,
+            "contract": MISSION_CONTRACT,
         },
     ).mappings().first()
 
@@ -107,9 +112,15 @@ def ensure_mission(
                 }
 
             baseline = _current_fast_cash_counts(connection)
+            mission_req_id = mission_request_id(mission_id)
             payload = {
                 "schema": MISSION_SCHEMA,
-                "contract": MISSION_CONTRACT,
+                "operation": MISSION_OPERATION,
+                "release_id": "R0007",
+                "request_id": mission_req_id,
+                "target_count": requested_new_gold,
+                "mission_contract": MISSION_CONTRACT,
+                "mission_record": True,
                 "mission_id": mission_id,
                 "requested_new_gold": requested_new_gold,
                 "target_mix": {"AGENCY": agency_target, "DIRECT": direct_target},
@@ -144,7 +155,7 @@ def ensure_mission(
                 ),
                 {
                     "job_id": str(uuid.uuid4()),
-                    "request_id": mission_request_id(mission_id),
+                    "request_id": mission_req_id,
                     "operation": MISSION_OPERATION,
                     "payload": json.dumps(payload),
                     "result": json.dumps(result),
@@ -166,6 +177,7 @@ def load_mission(transport, *, mission_id: str) -> dict[str, Any]:
                     FROM {QUEUE}
                     WHERE request_id = :request_id
                       AND operation = :operation
+                      AND payload->>'mission_contract' = :contract
                     ORDER BY created_at DESC
                     LIMIT 1
                     """
@@ -173,6 +185,7 @@ def load_mission(transport, *, mission_id: str) -> dict[str, Any]:
                 {
                     "request_id": mission_request_id(mission_id),
                     "operation": MISSION_OPERATION,
+                    "contract": MISSION_CONTRACT,
                 },
             ).mappings().first()
     finally:
@@ -244,7 +257,9 @@ def _update(
             if stop_requested is not None:
                 result["stop_requested"] = bool(stop_requested)
             selected_status = status or str(row.get("status") or "RUNNING")
-            finished = selected_status in {"SUCCEEDED", "STOPPED", "FAILED"}
+            if selected_status not in _CANONICAL_QUEUE_STATUSES:
+                raise RuntimeError(f"mission controller attempted invalid queue status: {selected_status}")
+            finished = selected_status in {"SUCCEEDED", "FAILED"}
             connection.execute(
                 text(
                     f"""
@@ -346,7 +361,7 @@ def record_gold_result(
             transport,
             mission_id=mission_id,
             state="STOPPED_BY_USER",
-            status="STOPPED",
+            status="SUCCEEDED",
             next_action="NONE",
             wave=wave,
             found_agency=found_agency,
@@ -368,20 +383,22 @@ def record_gold_result(
 
 
 def stop_is_requested(mission: Mapping[str, Any]) -> bool:
-    status = str(mission.get("status") or "")
     result = _json_object(mission.get("result"))
-    return status in {"STOP_REQUESTED", "STOPPED"} or result.get("stop_requested") is True
+    return result.get("stop_requested") is True or result.get("state") in {"STOP_REQUESTED", "STOPPED_BY_USER"}
 
 
 def request_stop(transport, *, mission_id: str) -> dict[str, Any]:
     mission = load_mission(transport, mission_id=mission_id)
-    if str(mission.get("status")) in {"SUCCEEDED", "STOPPED", "FAILED"}:
-        return _json_object(mission.get("result"))
+    result = _json_object(mission.get("result"))
+    if str(mission.get("status")) in {"SUCCEEDED", "FAILED"}:
+        return result
+    if result.get("state") in {"TARGET_MET", "STOPPED_BY_USER"}:
+        return result
     return _update(
         transport,
         mission_id=mission_id,
         state="STOP_REQUESTED",
-        status="STOP_REQUESTED",
+        status="RUNNING",
         next_action="STOP_AFTER_CURRENT_SAFE_STAGE",
         stop_requested=True,
     )
