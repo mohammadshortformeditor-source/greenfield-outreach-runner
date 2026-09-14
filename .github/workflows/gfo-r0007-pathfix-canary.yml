@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: mohammadshortformeditor-source/greenfield-outreach
-          ref: 92dadcb4204d6542e11b47aaccbe9300eb38b701
+          ref: 372ef98562ab8f3767a120c65aa92bcd5100af88
           token: ${{ secrets.GREENFIELD_READ_TOKEN }}
           path: engine
           persist-credentials: false
@@ -36,7 +36,7 @@ jobs:
           python -m pip install --disable-pip-version-check -q ./engine
           python -m pip install --disable-pip-version-check -q 'psycopg[binary]>=3.2,<4'
 
-      - name: Resume through four-source direct-to-Gold canary
+      - name: Resume through canonical bridge canary
         env:
           GFO_ENGINE_ROOT: engine
           GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
