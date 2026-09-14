@@ -218,7 +218,7 @@ def main() -> int:
                         transport,
                         mission_id=mission_id,
                         state="STOPPED_BY_USER",
-                        status="STOPPED",
+                        status="SUCCEEDED",
                         next_action="NONE",
                         wave=mission_wave,
                         found_agency=int(mission_state.get("found_agency") or 0),
