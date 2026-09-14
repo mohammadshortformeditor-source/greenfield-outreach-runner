@@ -39,8 +39,9 @@ jobs:
       - name: Resume through four-source direct-to-Gold canary
         env:
           GFO_ENGINE_ROOT: engine
-          GFO_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
-          GFO_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
+          GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
+          GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
+          GFO_EXPECTED_ACTIVE_COMMIT: cfd2385878cab6faf89cf895551edc0dacdf6303
           GFO_PUBLIC_TRIGGER_TITLE: ${{ github.event.issue.title }}
           GFO_RENDER_RUN_TIMEOUT_SECONDS: '1800'
         run: python ops/public_runner/resume_pathfix_canary.py
