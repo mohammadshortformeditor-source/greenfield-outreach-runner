@@ -7,10 +7,13 @@ import sys
 import uuid
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
 import runner_once as base
 import resume_authority_once as authority
+
+
+QUEUE = "gfo_render_operator_queue"
 
 
 def _trigger() -> tuple[str, int | str]:
@@ -39,14 +42,61 @@ def _fresh_payload(target: int) -> dict:
     }
 
 
+def _load_pathfix_stage1(transport, source_request_id: str) -> dict:
+    """Load a persisted pathfix stage-1 result by request id.
+
+    The queue row may be marked FAILED only because an older public canary expected the
+    pre-pathfix verbose component labels. The private result itself must still prove the
+    canonical four-source boundary before it can be resumed.
+    """
+    db = transport.engine()
+    try:
+        with db.begin() as connection:
+            row = connection.execute(
+                text(
+                    f"""
+                    SELECT result
+                    FROM {QUEUE}
+                    WHERE request_id = :request_id
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """
+                ),
+                {"request_id": source_request_id},
+            ).mappings().first()
+    finally:
+        db.dispose()
+    if row is None:
+        raise RuntimeError("pathfix source stage-1 result not found")
+    stage1 = authority._json_object(row["result"], "pathfix stage1 result")
+    external = stage1.get("external_authority_batch_request")
+    expected_sources = [
+        "CURRENT_GREENFIELD_DB",
+        "GMAIL_SENT",
+        "LEGACY_PRIMARY",
+        "LEGACY_SNAPSHOT",
+    ]
+    if (
+        stage1.get("status") != "EXTERNAL_AUTHORITY_BATCH_REQUIRED"
+        or stage1.get("pre_gold_filter_policy") != "FOUR_SOURCE_PRIOR_CONTACT_ONLY"
+        or stage1.get("prior_contact_filter_contract") != "FOUR_SOURCE_EXACT_EMAIL_ACTUAL_OUTREACH_ONLY_V1"
+        or not isinstance(external, dict)
+        or external.get("sources") != expected_sources
+        or stage1.get("motor_performs_gold_qualification") is True
+        or stage1.get("send_authority") != "NOT_GRANTED"
+    ):
+        raise RuntimeError("pathfix source stage-1 four-source contract not verified")
+    return stage1
+
+
 def main() -> int:
     mode, value = _trigger()
     transport = base._load_transport()
     if mode == "FRESH":
         payload = _fresh_payload(int(value))
     else:
-        source_request_id = f"publicrunner-find_gold_batch-{value}"
-        stage1 = authority._load_stage1(transport, source_request_id)
+        source_request_id = f"pathfix-fresh-find_gold_batch-{value}"
+        stage1 = _load_pathfix_stage1(transport, source_request_id)
         payload = authority._resume_payload(stage1)
         payload["request_id"] = f"pathfix-canary-find_gold_batch-{os.environ.get('GITHUB_RUN_ID', uuid.uuid4().hex)}"
     request_id = str(payload["request_id"])
@@ -96,18 +146,12 @@ def main() -> int:
             "LEGACY_PRIMARY",
             "LEGACY_SNAPSHOT",
         ]
-        expected_active = [
-            "CURRENT_GREENFIELD_DB_EXACT_EMAIL_ACTUAL_OUTREACH",
-            "GMAIL_SENT_EXACT_EMAIL",
-            "LEGACY_PRIMARY_EXACT_EMAIL",
-            "LEGACY_SNAPSHOT_EXACT_EMAIL",
-        ]
         contract_verified = (
             result.get("status") == "EXTERNAL_AUTHORITY_BATCH_REQUIRED"
             and result.get("pre_gold_filter_policy") == "FOUR_SOURCE_PRIOR_CONTACT_ONLY"
             and result.get("prior_contact_filter_contract") == "FOUR_SOURCE_EXACT_EMAIL_ACTUAL_OUTREACH_ONLY_V1"
             and sources == expected_sources
-            and active == expected_active
+            and active == expected_sources
             and result.get("motor_performs_gold_qualification") is not True
             and result.get("send_authority") == "NOT_GRANTED"
         )
