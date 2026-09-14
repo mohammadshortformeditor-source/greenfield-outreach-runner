@@ -29,7 +29,12 @@ def main() -> int:
     request_id = str(payload["request_id"])
 
     engine_root = Path(os.environ.get("GFO_ENGINE_ROOT", "engine")).resolve()
+    # GREENFIELD uses a src layout and several runtime config paths are resolved from the
+    # source checkout. Load the canary from that checkout, never from site-packages.
+    os.chdir(engine_root)
+    sys.path.insert(0, str(engine_root / "src"))
     sys.path.insert(0, str(engine_root))
+
     import outreach.runtime.r0007_cheap_first_wavefront as cheap_first
     import outreach.runtime.r0007_raw_motor_to_gold_bridge as raw_bridge
     from outreach.runtime.r0007_four_source_to_gold_fix import (
