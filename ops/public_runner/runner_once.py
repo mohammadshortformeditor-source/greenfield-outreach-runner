@@ -96,6 +96,16 @@ def _persist_private_result(transport, payload: dict, result: dict, exit_code: i
         db.dispose()
 
 
+def _safe_last_error(stderr: str, env: dict[str, str]) -> str:
+    lines = [line.strip() for line in (stderr or "").splitlines() if line.strip()]
+    detail = lines[-1] if lines else "unavailable"
+    for key in ("GFO_RENDER_DB_BROKER_TOKEN", "GFO_PRODUCTION_DSN"):
+        secret = env.get(key)
+        if secret:
+            detail = detail.replace(secret, "***")
+    return detail[:500]
+
+
 def main() -> int:
     transport = _load_transport()
     payload = _request_from_trigger()
@@ -122,13 +132,17 @@ def main() -> int:
             ],
             cwd=str(transport.ROOT),
             env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
             timeout=int(os.environ.get("GFO_RENDER_RUN_TIMEOUT_SECONDS", "1800")),
             check=False,
         )
         if not output_path.exists():
-            raise RuntimeError("canonical R0007 launcher exited without result")
+            raise RuntimeError(
+                "canonical R0007 launcher exited without result; "
+                f"exit_code={completed.returncode}; last_error={_safe_last_error(completed.stderr, env)}"
+            )
         result = json.loads(output_path.read_text(encoding="utf-8"))
 
     _persist_private_result(transport, payload, result, completed.returncode)
