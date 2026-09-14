@@ -16,6 +16,7 @@ import mission_control
 GOAL_PROFILE_ID = "GFO_SHORT_FORM_EDITING_REVENUE_2026Q3"
 TARGET_CONSTRAINTS_HASH = "sha256:00449ca149a50b7dd2a352e9180eb81b199158442a7b58338d677e150db7c570"
 QUEUE = "gfo_render_operator_queue"
+DEFAULT_MOTOR_ONLY_WAVE_CAP = 5
 
 
 def _load_transport():
@@ -147,6 +148,173 @@ def _execute_payload(transport, payload: dict) -> tuple[dict, int]:
     return result, completed.returncode
 
 
+def _assert_no_other_active_mission(transport, *, mission_id: str) -> None:
+    db = transport.engine()
+    try:
+        with db.begin() as connection:
+            other = connection.execute(
+                text(
+                    f"""
+                    SELECT request_id
+                    FROM {QUEUE}
+                    WHERE operation = :operation
+                      AND status IN ('RUNNING', 'STOP_REQUESTED')
+                      AND request_id <> :request_id
+                    ORDER BY created_at ASC
+                    LIMIT 1
+                    """
+                ),
+                {
+                    "operation": mission_control.MISSION_OPERATION,
+                    "request_id": mission_control.mission_request_id(mission_id),
+                },
+            ).scalar_one_or_none()
+    finally:
+        db.dispose()
+    if other is not None:
+        raise RuntimeError("another FIND_GOLD mission is still active; finish or stop it before starting a new mission")
+
+
+def _motor_payload_for_wave(mission: dict, *, mission_id: str, wave: int, request_id: str) -> dict:
+    fields = mission_control.mission_fields(mission, wave=wave)
+    return {
+        "schema": "gfo.operator-request.v1",
+        "operation": "FIND_GOLD_BATCH",
+        "release_id": "R0007",
+        "request_id": request_id,
+        "target_count": int(fields["mission_requested_new_gold"]),
+        "goal_profile_id": GOAL_PROFILE_ID,
+        "target_constraints_hash": TARGET_CONSTRAINTS_HASH,
+        **fields,
+        "send_authority": "NOT_GRANTED",
+        "outbound_side_effects": False,
+    }
+
+
+def _stop_mission_now(transport, *, mission_id: str, wave: int) -> dict:
+    current = mission_control.request_stop(transport, mission_id=mission_id)
+    return mission_control._update(
+        transport,
+        mission_id=mission_id,
+        state="STOPPED_BY_USER",
+        status="STOPPED",
+        next_action="NONE",
+        wave=wave,
+        found_agency=int(current.get("found_agency") or 0),
+        found_direct=int(current.get("found_direct") or 0),
+        stop_requested=True,
+    )
+
+
+def _run_motor_until_boundary(
+    transport,
+    *,
+    mission_id: str,
+    first_payload: dict,
+    first_wave: int,
+) -> tuple[dict, int, dict]:
+    wave = int(first_wave)
+    payload = dict(first_payload)
+    cap = max(1, int(os.environ.get("GFO_MISSION_MOTOR_ONLY_WAVE_CAP", str(DEFAULT_MOTOR_ONLY_WAVE_CAP))))
+    waves_run = 0
+
+    while True:
+        mission = mission_control.load_mission(transport, mission_id=mission_id)
+        if mission_control.stop_is_requested(mission):
+            stopped = _stop_mission_now(transport, mission_id=mission_id, wave=wave)
+            return {
+                "status": "STOPPED_BY_USER",
+                "send_authority": "NOT_GRANTED",
+                "outbound_side_effects": False,
+            }, 0, stopped
+
+        result, exit_code = _execute_payload(transport, payload)
+        _persist_private_result(transport, payload, result, exit_code)
+        waves_run += 1
+        request_id = str(payload["request_id"])
+
+        if exit_code != 0 or result.get("status") == "FAILED_FAIL_CLOSED":
+            failed = mission_control._update(
+                transport,
+                mission_id=mission_id,
+                state="FAILED",
+                status="FAILED",
+                next_action="REPORT_PROGRESS",
+                wave=wave,
+                last_request_id=request_id,
+                error=str(result.get("error") or "Motor execution failed")[:4000],
+            )
+            return result, exit_code or 1, failed
+
+        if result.get("status") in {"EXTERNAL_AUTHORITY_BATCH_REQUIRED", "TARGET_MET"}:
+            boundary = mission_control.record_stage1(
+                transport,
+                mission_id=mission_id,
+                wave=wave,
+                request_id=request_id,
+                stage1_result=result,
+            )
+            return result, exit_code, boundary
+
+        if result.get("continue_discovery") is not True:
+            terminal = mission_control.record_stage1(
+                transport,
+                mission_id=mission_id,
+                wave=wave,
+                request_id=request_id,
+                stage1_result=result,
+            )
+            return result, exit_code, terminal
+
+        checkpoint = mission_control._update(
+            transport,
+            mission_id=mission_id,
+            state="MOTOR_PASS_DONE_NO_AUTHORITY",
+            status="RUNNING",
+            next_action="RUN_MOTOR",
+            wave=wave,
+            last_request_id=request_id,
+            candidate_count=len(result.get("engine_candidates") or []) if isinstance(result.get("engine_candidates"), list) else 0,
+        )
+        if waves_run >= cap:
+            checkpoint = mission_control._update(
+                transport,
+                mission_id=mission_id,
+                state="CHECKPOINTED_MOTOR_WAVE_CAP",
+                status="RUNNING",
+                next_action="RUN_MOTOR",
+                wave=wave,
+                last_request_id=request_id,
+            )
+            return result, 0, checkpoint
+
+        latest = mission_control.load_mission(transport, mission_id=mission_id)
+        if mission_control.stop_is_requested(latest):
+            stopped = _stop_mission_now(transport, mission_id=mission_id, wave=wave)
+            return {
+                "status": "STOPPED_BY_USER",
+                "send_authority": "NOT_GRANTED",
+                "outbound_side_effects": False,
+            }, 0, stopped
+
+        wave += 1
+        mission_control._update(
+            transport,
+            mission_id=mission_id,
+            state="MOTOR_RUNNING",
+            status="RUNNING",
+            next_action="RUN_MOTOR",
+            wave=wave,
+        )
+        latest = mission_control.load_mission(transport, mission_id=mission_id)
+        payload = _motor_payload_for_wave(
+            latest,
+            mission_id=mission_id,
+            wave=wave,
+            request_id=f"publicrunner-mission-{mission_id}-wave-{wave}-find_gold_batch-{os.environ.get('GITHUB_RUN_ID', uuid.uuid4().hex)}",
+        )
+
+
 def main() -> int:
     transport = _load_transport()
     payload = _request_from_trigger()
@@ -157,54 +325,23 @@ def main() -> int:
 
     if operation == "FIND_GOLD_BATCH":
         mission_id = str(os.environ.get("GITHUB_RUN_ID") or uuid.uuid4().hex)
+        _assert_no_other_active_mission(transport, mission_id=mission_id)
         mission = mission_control.ensure_mission(
             transport,
             mission_id=mission_id,
             requested_new_gold=int(payload["target_count"]),
             source_request_id=request_id,
         )
-        if mission_control.stop_is_requested(mission):
-            mission_state = mission_control.request_stop(transport, mission_id=mission_id)
-            safe = {
-                "public_runner": "FINISHED",
-                "private_result_persisted": False,
-                "request_id": request_id,
-                "operation": operation,
-                "status": "STOPPED_BY_USER",
-                "mission_id": mission_id,
-                "mission_state": mission_state.get("state"),
-                "mission_found_new_gold": mission_state.get("found_new_gold", 0),
-                "send_authority": "NOT_GRANTED",
-                "outbound_side_effects": False,
-                "exit_code": 0,
-            }
-            print(json.dumps(safe, sort_keys=True), flush=True)
-            return 0
         payload.update(mission_control.mission_fields(mission, wave=1))
-
-    result, exit_code = _execute_payload(transport, payload)
-    _persist_private_result(transport, payload, result, exit_code)
-
-    if mission_id is not None:
-        if exit_code == 0 and result.get("status") != "FAILED_FAIL_CLOSED":
-            mission_state = mission_control.record_stage1(
-                transport,
-                mission_id=mission_id,
-                wave=1,
-                request_id=request_id,
-                stage1_result=result,
-            )
-        else:
-            mission_state = mission_control._update(
-                transport,
-                mission_id=mission_id,
-                state="FAILED",
-                status="FAILED",
-                next_action="REPORT_PROGRESS",
-                wave=1,
-                last_request_id=request_id,
-                error=str(result.get("error") or "initial Motor execution failed")[:4000],
-            )
+        result, exit_code, mission_state = _run_motor_until_boundary(
+            transport,
+            mission_id=mission_id,
+            first_payload=payload,
+            first_wave=1,
+        )
+    else:
+        result, exit_code = _execute_payload(transport, payload)
+        _persist_private_result(transport, payload, result, exit_code)
 
     safe = {
         "public_runner": "FINISHED",
