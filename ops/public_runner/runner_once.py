@@ -9,8 +9,11 @@ import tempfile
 import uuid
 from pathlib import Path
 
+from sqlalchemy import text
+
 GOAL_PROFILE_ID = "GFO_SHORT_FORM_EDITING_REVENUE_2026Q3"
 TARGET_CONSTRAINTS_HASH = "sha256:00449ca149a50b7dd2a352e9180eb81b199158442a7b58338d677e150db7c570"
+QUEUE = "gfo_render_operator_queue"
 
 
 def _load_transport():
@@ -61,6 +64,38 @@ def _request_from_trigger() -> dict:
     return payload
 
 
+def _persist_private_result(transport, payload: dict, result: dict, exit_code: int) -> None:
+    db = transport.engine()
+    try:
+        with db.begin() as connection:
+            connection.execute(
+                text(
+                    f"""
+                    INSERT INTO {QUEUE} (
+                        job_id, request_id, operation, payload, status, result, error,
+                        attempts, created_at, started_at, finished_at, heartbeat_at, lease_owner
+                    )
+                    VALUES (
+                        CAST(:job_id AS uuid), :request_id, :operation, CAST(:payload AS jsonb),
+                        :status, CAST(:result AS jsonb), :error,
+                        1, now(), now(), now(), now(), 'github-public-runner-audit'
+                    )
+                    """
+                ),
+                {
+                    "job_id": str(uuid.uuid4()),
+                    "request_id": str(payload["request_id"]),
+                    "operation": str(payload["operation"]),
+                    "payload": json.dumps(payload),
+                    "status": "SUCCEEDED" if exit_code == 0 and result.get("status") != "FAILED_FAIL_CLOSED" else "FAILED",
+                    "result": json.dumps(result),
+                    "error": None if exit_code == 0 and result.get("status") != "FAILED_FAIL_CLOSED" else str(result.get("error") or "public runner canonical launcher failed")[:4000],
+                },
+            )
+    finally:
+        db.dispose()
+
+
 def main() -> int:
     transport = _load_transport()
     payload = _request_from_trigger()
@@ -96,8 +131,11 @@ def main() -> int:
             raise RuntimeError("canonical R0007 launcher exited without result")
         result = json.loads(output_path.read_text(encoding="utf-8"))
 
+    _persist_private_result(transport, payload, result, completed.returncode)
+
     safe = {
         "public_runner": "FINISHED",
+        "private_result_persisted": True,
         "request_id": request_id,
         "operation": operation,
         "status": result.get("status"),
