@@ -158,7 +158,8 @@ def _assert_no_other_active_mission(transport, *, mission_id: str) -> None:
                     SELECT request_id
                     FROM {QUEUE}
                     WHERE operation = :operation
-                      AND status IN ('RUNNING', 'STOP_REQUESTED')
+                      AND status = 'RUNNING'
+                      AND payload->>'mission_contract' = :contract
                       AND request_id <> :request_id
                     ORDER BY created_at ASC
                     LIMIT 1
@@ -166,6 +167,7 @@ def _assert_no_other_active_mission(transport, *, mission_id: str) -> None:
                 ),
                 {
                     "operation": mission_control.MISSION_OPERATION,
+                    "contract": mission_control.MISSION_CONTRACT,
                     "request_id": mission_control.mission_request_id(mission_id),
                 },
             ).scalar_one_or_none()
@@ -197,7 +199,7 @@ def _stop_mission_now(transport, *, mission_id: str, wave: int) -> dict:
         transport,
         mission_id=mission_id,
         state="STOPPED_BY_USER",
-        status="STOPPED",
+        status="SUCCEEDED",
         next_action="NONE",
         wave=wave,
         found_agency=int(current.get("found_agency") or 0),
