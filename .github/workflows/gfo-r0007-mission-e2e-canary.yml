@@ -21,7 +21,7 @@ jobs:
       - name: Checkout pinned experimental runner
         uses: actions/checkout@v4
         with:
-          ref: c8d1411c59d3683a809e8d2b55b70b641a1404c6
+          ref: 4b1d6ca16f72d533c74278376263aa3eb7e0b5c7
           persist-credentials: false
       - name: Checkout pinned experimental GREENFIELD engine
         uses: actions/checkout@v4
@@ -36,7 +36,7 @@ jobs:
           python-version: '3.13'
       - name: Verify immutable test pins
         run: |
-          test "$(git rev-parse HEAD)" = c8d1411c59d3683a809e8d2b55b70b641a1404c6
+          test "$(git rev-parse HEAD)" = 4b1d6ca16f72d533c74278376263aa3eb7e0b5c7
           test "$(git -C engine rev-parse HEAD)" = fe3ee4264ce94fe5bb7669d72249f4a923217c78
           test "$(git -C engine rev-parse 'HEAD^{tree}')" = 5d580890b64c6470ca99db44dbd5701fc9841f42
       - name: Install dependencies
@@ -80,7 +80,7 @@ jobs:
       - name: Checkout pinned experimental runner
         uses: actions/checkout@v4
         with:
-          ref: c8d1411c59d3683a809e8d2b55b70b641a1404c6
+          ref: 4b1d6ca16f72d533c74278376263aa3eb7e0b5c7
           persist-credentials: false
       - name: Checkout pinned experimental GREENFIELD engine
         uses: actions/checkout@v4
@@ -131,7 +131,7 @@ jobs:
       - name: Checkout pinned experimental runner
         uses: actions/checkout@v4
         with:
-          ref: c8d1411c59d3683a809e8d2b55b70b641a1404c6
+          ref: 4b1d6ca16f72d533c74278376263aa3eb7e0b5c7
           persist-credentials: false
       - name: Checkout pinned experimental GREENFIELD engine
         uses: actions/checkout@v4
