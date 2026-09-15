@@ -21,13 +21,13 @@ jobs:
       - name: Checkout pinned experimental runner
         uses: actions/checkout@v4
         with:
-          ref: 4b1d6ca16f72d533c74278376263aa3eb7e0b5c7
+          ref: cc6d777edd5c8f5caa51b76add9d6c5306cdcf3f
           persist-credentials: false
       - name: Checkout pinned experimental GREENFIELD engine
         uses: actions/checkout@v4
         with:
           repository: mohammadshortformeditor-source/greenfield-outreach
-          ref: 7f7fa944cb15f74ddc6da935f8dc406ba1f47793
+          ref: efe22adc8a88f0bc46b3b258fbcc3630c1c0b8ed
           token: ${{ secrets.GREENFIELD_READ_TOKEN }}
           path: engine
           persist-credentials: false
@@ -36,9 +36,9 @@ jobs:
           python-version: '3.13'
       - name: Verify immutable test pins
         run: |
-          test "$(git rev-parse HEAD)" = 4b1d6ca16f72d533c74278376263aa3eb7e0b5c7
-          test "$(git -C engine rev-parse HEAD)" = 7f7fa944cb15f74ddc6da935f8dc406ba1f47793
-          test "$(git -C engine rev-parse 'HEAD^{tree}')" = dafb43d1f90520141b8a5c0bd69db969a4439f83
+          test "$(git rev-parse HEAD)" = cc6d777edd5c8f5caa51b76add9d6c5306cdcf3f
+          test "$(git -C engine rev-parse HEAD)" = efe22adc8a88f0bc46b3b258fbcc3630c1c0b8ed
+          test "$(git -C engine rev-parse 'HEAD^{tree}')" = ba738ce84f830abe46f70f8f43bef3cad76c7d8e
       - name: Install dependencies
         run: |
           python -m pip install --disable-pip-version-check -q -e ./engine
@@ -46,8 +46,12 @@ jobs:
       - name: Motor and mission regression tests
         run: |
           python -m pip install --disable-pip-version-check -q pytest
-          python -m pytest -q engine/tests/test_r0007_motor_quality_speed.py engine/tests/runtime/test_r0007_route_identity_binding.py
+          python -m pytest -q engine/tests/test_r0007_motor_quality_speed.py engine/tests/runtime/test_r0007_route_identity_binding.py engine/tests/runtime/test_r0007_motor_packet_fidelity.py
           PYTHONPATH=ops/public_runner python -m pytest -q ops/public_runner/test_mission_frontier.py
+      - name: Live bounded Motor component smoke
+        if: contains(github.event.issue.title, 'LIVE_SMOKE')
+        timeout-minutes: 5
+        run: python engine/tests/smoke_r0007_motor_live.py
       - name: Start FIND 2 mission
         if: startsWith(github.event.issue.title, '[GFO-E2E] FIND 2')
         env:
@@ -55,8 +59,8 @@ jobs:
           GFO_PUBLIC_TRIGGER_TITLE: '[GFO-RUN] FIND 2'
           GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
           GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
-          GFO_EXPECTED_ACTIVE_COMMIT: 7f7fa944cb15f74ddc6da935f8dc406ba1f47793
-          GFO_EXPECTED_ACTIVE_TREE: dafb43d1f90520141b8a5c0bd69db969a4439f83
+          GFO_EXPECTED_ACTIVE_COMMIT: efe22adc8a88f0bc46b3b258fbcc3630c1c0b8ed
+          GFO_EXPECTED_ACTIVE_TREE: ba738ce84f830abe46f70f8f43bef3cad76c7d8e
           GFO_FREE_TRANSPORT_HTTP_CACHE_MAX_ENTRIES: '1'
           GFO_FREE_TRANSPORT_ROUTE_HIT_CAP: '24'
           GFO_FREE_TRANSPORT_ENRICHMENT_WORKERS: '8'
@@ -80,13 +84,13 @@ jobs:
       - name: Checkout pinned experimental runner
         uses: actions/checkout@v4
         with:
-          ref: 4b1d6ca16f72d533c74278376263aa3eb7e0b5c7
+          ref: cc6d777edd5c8f5caa51b76add9d6c5306cdcf3f
           persist-credentials: false
       - name: Checkout pinned experimental GREENFIELD engine
         uses: actions/checkout@v4
         with:
           repository: mohammadshortformeditor-source/greenfield-outreach
-          ref: 7f7fa944cb15f74ddc6da935f8dc406ba1f47793
+          ref: efe22adc8a88f0bc46b3b258fbcc3630c1c0b8ed
           token: ${{ secrets.GREENFIELD_READ_TOKEN }}
           path: engine
           persist-credentials: false
@@ -103,8 +107,8 @@ jobs:
           RAW_TRIGGER_TITLE: ${{ github.event.issue.title }}
           GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
           GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
-          GFO_EXPECTED_ACTIVE_COMMIT: 7f7fa944cb15f74ddc6da935f8dc406ba1f47793
-          GFO_EXPECTED_ACTIVE_TREE: dafb43d1f90520141b8a5c0bd69db969a4439f83
+          GFO_EXPECTED_ACTIVE_COMMIT: efe22adc8a88f0bc46b3b258fbcc3630c1c0b8ed
+          GFO_EXPECTED_ACTIVE_TREE: ba738ce84f830abe46f70f8f43bef3cad76c7d8e
           GFO_FREE_TRANSPORT_HTTP_CACHE_MAX_ENTRIES: '1'
           GFO_FREE_TRANSPORT_ROUTE_HIT_CAP: '24'
           GFO_FREE_TRANSPORT_ENRICHMENT_WORKERS: '8'
@@ -131,13 +135,13 @@ jobs:
       - name: Checkout pinned experimental runner
         uses: actions/checkout@v4
         with:
-          ref: 4b1d6ca16f72d533c74278376263aa3eb7e0b5c7
+          ref: cc6d777edd5c8f5caa51b76add9d6c5306cdcf3f
           persist-credentials: false
       - name: Checkout pinned experimental GREENFIELD engine
         uses: actions/checkout@v4
         with:
           repository: mohammadshortformeditor-source/greenfield-outreach
-          ref: 7f7fa944cb15f74ddc6da935f8dc406ba1f47793
+          ref: efe22adc8a88f0bc46b3b258fbcc3630c1c0b8ed
           token: ${{ secrets.GREENFIELD_READ_TOKEN }}
           path: engine
           persist-credentials: false
@@ -154,8 +158,8 @@ jobs:
           RAW_TRIGGER_TITLE: ${{ github.event.issue.title }}
           GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
           GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
-          GFO_EXPECTED_ACTIVE_COMMIT: 7f7fa944cb15f74ddc6da935f8dc406ba1f47793
-          GFO_EXPECTED_ACTIVE_TREE: dafb43d1f90520141b8a5c0bd69db969a4439f83
+          GFO_EXPECTED_ACTIVE_COMMIT: efe22adc8a88f0bc46b3b258fbcc3630c1c0b8ed
+          GFO_EXPECTED_ACTIVE_TREE: ba738ce84f830abe46f70f8f43bef3cad76c7d8e
           GFO_FREE_TRANSPORT_HTTP_CACHE_MAX_ENTRIES: '1'
           GFO_FREE_TRANSPORT_ROUTE_HIT_CAP: '24'
           GFO_FREE_TRANSPORT_ENRICHMENT_WORKERS: '8'
