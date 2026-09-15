@@ -14,20 +14,20 @@ concurrency:
 
 jobs:
   start:
-    if: github.event.issue.user.login == 'mohammadshortformeditor-source' && startsWith(github.event.issue.title, '[GFO-E2E] FIND 2')
+    if: github.event.issue.user.login == 'mohammadshortformeditor-source' && (startsWith(github.event.issue.title, '[GFO-E2E] FIND 2') || startsWith(github.event.issue.title, '[GFO-MOTOR-REGRESSION]'))
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
       - name: Checkout pinned experimental runner
         uses: actions/checkout@v4
         with:
-          ref: a7a70364d24106c5eb6b3024aa90effb61148fca
+          ref: c8d1411c59d3683a809e8d2b55b70b641a1404c6
           persist-credentials: false
       - name: Checkout pinned experimental GREENFIELD engine
         uses: actions/checkout@v4
         with:
           repository: mohammadshortformeditor-source/greenfield-outreach
-          ref: ccf0de6b1122cef398b57d2f53800e0c03a12946
+          ref: fe3ee4264ce94fe5bb7669d72249f4a923217c78
           token: ${{ secrets.GREENFIELD_READ_TOKEN }}
           path: engine
           persist-credentials: false
@@ -36,21 +36,27 @@ jobs:
           python-version: '3.13'
       - name: Verify immutable test pins
         run: |
-          test "$(git rev-parse HEAD)" = a7a70364d24106c5eb6b3024aa90effb61148fca
-          test "$(git -C engine rev-parse HEAD)" = ccf0de6b1122cef398b57d2f53800e0c03a12946
-          test "$(git -C engine rev-parse 'HEAD^{tree}')" = 9419007828ccc18550f4c916f0e6ebc6387370d0
+          test "$(git rev-parse HEAD)" = c8d1411c59d3683a809e8d2b55b70b641a1404c6
+          test "$(git -C engine rev-parse HEAD)" = fe3ee4264ce94fe5bb7669d72249f4a923217c78
+          test "$(git -C engine rev-parse 'HEAD^{tree}')" = 5d580890b64c6470ca99db44dbd5701fc9841f42
       - name: Install dependencies
         run: |
           python -m pip install --disable-pip-version-check -q -e ./engine
           python -m pip install --disable-pip-version-check -q 'psycopg[binary]>=3.2,<4'
+      - name: Motor and mission regression tests
+        run: |
+          python -m pip install --disable-pip-version-check -q pytest
+          python -m pytest -q engine/tests/test_r0007_motor_quality_speed.py engine/tests/runtime/test_r0007_route_identity_binding.py
+          PYTHONPATH=ops/public_runner python -m pytest -q ops/public_runner/test_mission_frontier.py
       - name: Start FIND 2 mission
+        if: startsWith(github.event.issue.title, '[GFO-E2E] FIND 2')
         env:
           GFO_ENGINE_ROOT: engine
           GFO_PUBLIC_TRIGGER_TITLE: '[GFO-RUN] FIND 2'
           GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
           GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
-          GFO_EXPECTED_ACTIVE_COMMIT: ccf0de6b1122cef398b57d2f53800e0c03a12946
-          GFO_EXPECTED_ACTIVE_TREE: 9419007828ccc18550f4c916f0e6ebc6387370d0
+          GFO_EXPECTED_ACTIVE_COMMIT: fe3ee4264ce94fe5bb7669d72249f4a923217c78
+          GFO_EXPECTED_ACTIVE_TREE: 5d580890b64c6470ca99db44dbd5701fc9841f42
           GFO_FREE_TRANSPORT_HTTP_CACHE_MAX_ENTRIES: '1'
           GFO_FREE_TRANSPORT_ROUTE_HIT_CAP: '24'
           GFO_FREE_TRANSPORT_ENRICHMENT_WORKERS: '8'
@@ -74,13 +80,13 @@ jobs:
       - name: Checkout pinned experimental runner
         uses: actions/checkout@v4
         with:
-          ref: a7a70364d24106c5eb6b3024aa90effb61148fca
+          ref: c8d1411c59d3683a809e8d2b55b70b641a1404c6
           persist-credentials: false
       - name: Checkout pinned experimental GREENFIELD engine
         uses: actions/checkout@v4
         with:
           repository: mohammadshortformeditor-source/greenfield-outreach
-          ref: ccf0de6b1122cef398b57d2f53800e0c03a12946
+          ref: fe3ee4264ce94fe5bb7669d72249f4a923217c78
           token: ${{ secrets.GREENFIELD_READ_TOKEN }}
           path: engine
           persist-credentials: false
@@ -97,8 +103,8 @@ jobs:
           RAW_TRIGGER_TITLE: ${{ github.event.issue.title }}
           GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
           GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
-          GFO_EXPECTED_ACTIVE_COMMIT: ccf0de6b1122cef398b57d2f53800e0c03a12946
-          GFO_EXPECTED_ACTIVE_TREE: 9419007828ccc18550f4c916f0e6ebc6387370d0
+          GFO_EXPECTED_ACTIVE_COMMIT: fe3ee4264ce94fe5bb7669d72249f4a923217c78
+          GFO_EXPECTED_ACTIVE_TREE: 5d580890b64c6470ca99db44dbd5701fc9841f42
           GFO_FREE_TRANSPORT_HTTP_CACHE_MAX_ENTRIES: '1'
           GFO_FREE_TRANSPORT_ROUTE_HIT_CAP: '24'
           GFO_FREE_TRANSPORT_ENRICHMENT_WORKERS: '8'
@@ -125,13 +131,13 @@ jobs:
       - name: Checkout pinned experimental runner
         uses: actions/checkout@v4
         with:
-          ref: a7a70364d24106c5eb6b3024aa90effb61148fca
+          ref: c8d1411c59d3683a809e8d2b55b70b641a1404c6
           persist-credentials: false
       - name: Checkout pinned experimental GREENFIELD engine
         uses: actions/checkout@v4
         with:
           repository: mohammadshortformeditor-source/greenfield-outreach
-          ref: ccf0de6b1122cef398b57d2f53800e0c03a12946
+          ref: fe3ee4264ce94fe5bb7669d72249f4a923217c78
           token: ${{ secrets.GREENFIELD_READ_TOKEN }}
           path: engine
           persist-credentials: false
@@ -148,8 +154,8 @@ jobs:
           RAW_TRIGGER_TITLE: ${{ github.event.issue.title }}
           GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
           GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
-          GFO_EXPECTED_ACTIVE_COMMIT: ccf0de6b1122cef398b57d2f53800e0c03a12946
-          GFO_EXPECTED_ACTIVE_TREE: 9419007828ccc18550f4c916f0e6ebc6387370d0
+          GFO_EXPECTED_ACTIVE_COMMIT: fe3ee4264ce94fe5bb7669d72249f4a923217c78
+          GFO_EXPECTED_ACTIVE_TREE: 5d580890b64c6470ca99db44dbd5701fc9841f42
           GFO_FREE_TRANSPORT_HTTP_CACHE_MAX_ENTRIES: '1'
           GFO_FREE_TRANSPORT_ROUTE_HIT_CAP: '24'
           GFO_FREE_TRANSPORT_ENRICHMENT_WORKERS: '8'
