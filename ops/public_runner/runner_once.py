@@ -158,9 +158,18 @@ def _assert_no_other_active_mission(transport, *, mission_id: str) -> None:
                     SELECT request_id
                     FROM {QUEUE}
                     WHERE operation = :operation
-                      AND status = 'RUNNING'
                       AND payload->>'mission_contract' = :contract
                       AND request_id <> :request_id
+                      AND result->>'state' IN (
+                          'RUNNING',
+                          'MOTOR_RUNNING',
+                          'AUTHORITY_REQUIRED',
+                          'FOUR_SOURCE_DONE',
+                          'GOLD_PASS_DONE',
+                          'CHECKPOINTED_MOTOR_WAVE_CAP',
+                          'MOTOR_PASS_DONE_NO_AUTHORITY',
+                          'STOP_REQUESTED'
+                      )
                     ORDER BY created_at ASC
                     LIMIT 1
                     """

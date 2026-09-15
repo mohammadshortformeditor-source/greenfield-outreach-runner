@@ -32,7 +32,10 @@ def main() -> int:
         result = {"status": "STOPPED_BY_USER"}
         exit_code = 0
     else:
-        if str(mission.get("status")) != "RUNNING" or state.get("next_action") != "RUN_MOTOR":
+        if (
+            state.get("next_action") != "RUN_MOTOR"
+            or state.get("state") in mission_control.TERMINAL_MISSION_STATES
+        ):
             raise RuntimeError("mission is not checkpointed for Motor continuation")
         prior_wave = int(state.get("wave") or 1)
         wave = prior_wave if state.get("state") == "MOTOR_RUNNING" else prior_wave + 1

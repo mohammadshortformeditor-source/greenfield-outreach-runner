@@ -13,6 +13,17 @@ MISSION_OPERATION = "FIND_GOLD_BATCH"
 MISSION_SCHEMA = "gfo.operator-request.v1"
 MISSION_CONTRACT = "REQUEST_SCOPED_NEW_GOLD_60_40_V1"
 _CANONICAL_QUEUE_STATUSES = {"PENDING", "RUNNING", "SUCCEEDED", "FAILED"}
+# Mission rows are durable controller checkpoints, not executable transport jobs.
+# Store every live checkpoint as SUCCEEDED so the legacy Render stale-job sweep
+# cannot claim or fail it while Motor/authority work is legitimately in flight.
+MISSION_CHECKPOINT_STORAGE_STATUS = "SUCCEEDED"
+TERMINAL_MISSION_STATES = {
+    "TARGET_MET",
+    "STOPPED_BY_USER",
+    "FAILED",
+    "FAILED_WITH_PROGRESS",
+    "MOTOR_STOPPED_WITHOUT_AUTHORITY_BATCH",
+}
 
 
 def balanced_targets(total: int) -> tuple[int, int]:
@@ -121,6 +132,8 @@ def ensure_mission(
                 "target_count": requested_new_gold,
                 "mission_contract": MISSION_CONTRACT,
                 "mission_record": True,
+                "transport_claimable": False,
+                "checkpoint_record": True,
                 "mission_id": mission_id,
                 "requested_new_gold": requested_new_gold,
                 "target_mix": {"AGENCY": agency_target, "DIRECT": direct_target},
@@ -152,8 +165,8 @@ def ensure_mission(
                     )
                     VALUES (
                         CAST(:job_id AS uuid), :request_id, :operation, CAST(:payload AS jsonb),
-                        'RUNNING', CAST(:result AS jsonb), NULL,
-                        1, now(), now(), NULL, now(), 'github-public-runner-mission'
+                        :storage_status, CAST(:result AS jsonb), NULL,
+                        1, now(), now(), now(), now(), 'github-public-runner-mission-checkpoint'
                     )
                     """
                 ),
@@ -163,9 +176,14 @@ def ensure_mission(
                     "operation": MISSION_OPERATION,
                     "payload": json.dumps(payload),
                     "result": json.dumps(result),
+                    "storage_status": MISSION_CHECKPOINT_STORAGE_STATUS,
                 },
             )
-            return {"payload": payload, "result": result, "status": "RUNNING"}
+            return {
+                "payload": payload,
+                "result": result,
+                "status": MISSION_CHECKPOINT_STORAGE_STATUS,
+            }
     finally:
         db.dispose()
 
@@ -273,7 +291,9 @@ def _update(
             result["mission_target"] = target
             result["mission_new_gold"] = int(result["found_new_gold"])
             result["deficit"] = max(target - int(result["found_new_gold"]), 0)
-            selected_status = status or str(row.get("status") or "RUNNING")
+            selected_status = status or str(row.get("status") or MISSION_CHECKPOINT_STORAGE_STATUS)
+            if selected_status == "RUNNING":
+                selected_status = MISSION_CHECKPOINT_STORAGE_STATUS
             if selected_status not in _CANONICAL_QUEUE_STATUSES:
                 raise RuntimeError(f"mission controller attempted invalid queue status: {selected_status}")
             finished = selected_status in {"SUCCEEDED", "FAILED"}
@@ -436,9 +456,7 @@ def stop_is_requested(mission: Mapping[str, Any]) -> bool:
 def request_stop(transport, *, mission_id: str) -> dict[str, Any]:
     mission = load_mission(transport, mission_id=mission_id)
     result = _json_object(mission.get("result"))
-    if str(mission.get("status")) in {"SUCCEEDED", "FAILED"}:
-        return result
-    if result.get("state") in {"TARGET_MET", "STOPPED_BY_USER"}:
+    if result.get("state") in TERMINAL_MISSION_STATES:
         return result
     return _update(
         transport,
