@@ -239,6 +239,23 @@ def _run_motor_until_boundary(
                 "outbound_side_effects": False,
             }, 0, stopped
 
+        progress = mission.get("result") or {}
+        if progress.get("state") == "TARGET_MET" or (
+            "deficit" in progress and int(progress["deficit"]) <= 0
+        ):
+            completed = mission_control._update(
+                transport,
+                mission_id=mission_id,
+                state="TARGET_MET",
+                status="SUCCEEDED",
+                next_action="NONE",
+            )
+            return {
+                "status": "TARGET_MET",
+                "send_authority": "NOT_GRANTED",
+                "outbound_side_effects": False,
+            }, 0, completed
+
         mission_control._update(
             transport,
             mission_id=mission_id,
@@ -320,6 +337,7 @@ def _run_motor_until_boundary(
             )
             return result, exit_code, terminal
 
+        seen_source_urls, seen_routes = mission_control._candidate_frontier(result)
         checkpoint = mission_control._update(
             transport,
             mission_id=mission_id,
@@ -330,6 +348,8 @@ def _run_motor_until_boundary(
             last_request_id=request_id,
             candidate_count=len(result.get("engine_candidates") or []) if isinstance(result.get("engine_candidates"), list) else 0,
             last_checkpoint=f"PASS_{wave}_MOTOR_DONE_NO_AUTHORITY",
+            seen_source_urls=seen_source_urls,
+            seen_routes=seen_routes,
         )
         if waves_run >= cap:
             checkpoint = mission_control._update(

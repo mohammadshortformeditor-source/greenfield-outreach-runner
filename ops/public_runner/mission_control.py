@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import uuid
 from typing import Any, Mapping
+from urllib.parse import urlsplit
 
 from sqlalchemy import text
 
@@ -37,6 +38,47 @@ def balanced_targets(total: int) -> tuple[int, int]:
 
 def mission_request_id(mission_id: str) -> str:
     return f"mission-find_gold-{mission_id}"
+
+
+def _normalize_source_url(value: object) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        parts = urlsplit(raw)
+    except ValueError:
+        return raw.casefold()
+    host = parts.netloc.casefold().removeprefix("www.")
+    path = parts.path.rstrip("/") or "/"
+    return f"{parts.scheme.casefold() or 'https'}://{host}{path}"
+
+
+def _candidate_frontier(stage_result: Mapping[str, Any]) -> tuple[list[str], list[str]]:
+    attempted = stage_result.get("motor_attempted_source_urls") or []
+    sources = [
+        normalized for value in attempted
+        if isinstance(value, str) and (normalized := _normalize_source_url(value))
+    ] if isinstance(attempted, list) else []
+    raw = stage_result.get("engine_candidates")
+    if isinstance(raw, (str, bytes)) or not isinstance(raw, list):
+        return list(dict.fromkeys(sources)), []
+    routes: list[str] = []
+    for lead in raw:
+        if not isinstance(lead, Mapping):
+            continue
+        search = lead.get("search")
+        route = lead.get("contact_route")
+        source = _normalize_source_url(
+            search.get("source_url") if isinstance(search, Mapping) else ""
+        )
+        email = str(
+            route.get("route_value") if isinstance(route, Mapping) else ""
+        ).strip().lower()
+        if source:
+            sources.append(source)
+        if "@" in email:
+            routes.append(email)
+    return list(dict.fromkeys(sources)), list(dict.fromkeys(routes))
 
 
 def _json_object(value: Any) -> dict[str, Any]:
@@ -155,6 +197,8 @@ def ensure_mission(
                 "last_checkpoint": "MISSION_STARTED",
                 "next_action": "RUN_MOTOR",
                 "stop_requested": False,
+                "seen_source_urls": [],
+                "seen_routes": [],
             }
             connection.execute(
                 text(
@@ -233,6 +277,8 @@ def mission_fields(mission: Mapping[str, Any], *, wave: int | None = None) -> di
         "mission_fast_cash_baseline": dict(payload["mission_fast_cash_baseline"]),
         "mission_target_mix": dict(payload["target_mix"]),
         "mission_wave": selected_wave,
+        "mission_seen_source_urls": list(result.get("seen_source_urls") or ()),
+        "mission_seen_routes": list(result.get("seen_routes") or ()),
     }
 
 
@@ -253,6 +299,8 @@ def _update(
     failure_at: str | None = None,
     error: str | None = None,
     stop_requested: bool | None = None,
+    seen_source_urls: list[str] | None = None,
+    seen_routes: list[str] | None = None,
 ) -> dict[str, Any]:
     db = transport.engine()
     try:
@@ -287,6 +335,18 @@ def _update(
                 result["failure_at"] = str(failure_at)
             if stop_requested is not None:
                 result["stop_requested"] = bool(stop_requested)
+            if seen_source_urls is not None:
+                result["seen_source_urls"] = list(
+                    dict.fromkeys(
+                        [*(result.get("seen_source_urls") or ()), *seen_source_urls]
+                    )
+                )
+            if seen_routes is not None:
+                result["seen_routes"] = list(
+                    dict.fromkeys(
+                        [*(result.get("seen_routes") or ()), *seen_routes]
+                    )
+                )
             target = int(_json_object(row.get("payload")).get("requested_new_gold") or 0)
             result["mission_target"] = target
             result["mission_new_gold"] = int(result["found_new_gold"])
@@ -333,6 +393,7 @@ def record_stage1(
     state = str(stage1_result.get("status") or "")
     candidates = stage1_result.get("engine_candidates")
     candidate_count = len(candidates) if isinstance(candidates, list) else 0
+    seen_source_urls, seen_routes = _candidate_frontier(stage1_result)
     if state == "EXTERNAL_AUTHORITY_BATCH_REQUIRED":
         return _update(
             transport,
@@ -344,6 +405,8 @@ def record_stage1(
             last_request_id=request_id,
             candidate_count=candidate_count,
             last_checkpoint=f"PASS_{wave}_MOTOR_DONE",
+            seen_source_urls=seen_source_urls,
+            seen_routes=seen_routes,
         )
     if state == "TARGET_MET":
         return _update(
@@ -355,6 +418,8 @@ def record_stage1(
             wave=wave,
             last_request_id=request_id,
             last_checkpoint=f"PASS_{wave}_MOTOR_DONE_TARGET_MET",
+            seen_source_urls=seen_source_urls,
+            seen_routes=seen_routes,
         )
     return _update(
         transport,
@@ -368,6 +433,8 @@ def record_stage1(
         last_checkpoint=f"PASS_{wave}_MOTOR_DONE",
         failure_at=f"PASS_{wave}_MOTOR",
         error=f"Motor stage ended with {state or 'UNKNOWN'}",
+        seen_source_urls=seen_source_urls,
+        seen_routes=seen_routes,
     )
 
 
