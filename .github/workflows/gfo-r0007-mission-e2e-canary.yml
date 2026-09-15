@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: mohammadshortformeditor-source/greenfield-outreach
-          ref: efe22adc8a88f0bc46b3b258fbcc3630c1c0b8ed
+          ref: 53518b258bda2ee76103d2e2e0a13e48d5f231ab
           token: ${{ secrets.GREENFIELD_READ_TOKEN }}
           path: engine
           persist-credentials: false
@@ -37,8 +37,8 @@ jobs:
       - name: Verify immutable test pins
         run: |
           test "$(git rev-parse HEAD)" = cc6d777edd5c8f5caa51b76add9d6c5306cdcf3f
-          test "$(git -C engine rev-parse HEAD)" = efe22adc8a88f0bc46b3b258fbcc3630c1c0b8ed
-          test "$(git -C engine rev-parse 'HEAD^{tree}')" = ba738ce84f830abe46f70f8f43bef3cad76c7d8e
+          test "$(git -C engine rev-parse HEAD)" = 53518b258bda2ee76103d2e2e0a13e48d5f231ab
+          test "$(git -C engine rev-parse 'HEAD^{tree}')" = ed805b9284509a54f31fb8b5b6619465ad972e59
       - name: Install dependencies
         run: |
           python -m pip install --disable-pip-version-check -q -e ./engine
@@ -59,8 +59,8 @@ jobs:
           GFO_PUBLIC_TRIGGER_TITLE: '[GFO-RUN] FIND 2'
           GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
           GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
-          GFO_EXPECTED_ACTIVE_COMMIT: efe22adc8a88f0bc46b3b258fbcc3630c1c0b8ed
-          GFO_EXPECTED_ACTIVE_TREE: ba738ce84f830abe46f70f8f43bef3cad76c7d8e
+          GFO_EXPECTED_ACTIVE_COMMIT: 53518b258bda2ee76103d2e2e0a13e48d5f231ab
+          GFO_EXPECTED_ACTIVE_TREE: ed805b9284509a54f31fb8b5b6619465ad972e59
           GFO_FREE_TRANSPORT_HTTP_CACHE_MAX_ENTRIES: '1'
           GFO_FREE_TRANSPORT_ROUTE_HIT_CAP: '24'
           GFO_FREE_TRANSPORT_ENRICHMENT_WORKERS: '8'
@@ -90,7 +90,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: mohammadshortformeditor-source/greenfield-outreach
-          ref: efe22adc8a88f0bc46b3b258fbcc3630c1c0b8ed
+          ref: 53518b258bda2ee76103d2e2e0a13e48d5f231ab
           token: ${{ secrets.GREENFIELD_READ_TOKEN }}
           path: engine
           persist-credentials: false
@@ -107,8 +107,8 @@ jobs:
           RAW_TRIGGER_TITLE: ${{ github.event.issue.title }}
           GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
           GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
-          GFO_EXPECTED_ACTIVE_COMMIT: efe22adc8a88f0bc46b3b258fbcc3630c1c0b8ed
-          GFO_EXPECTED_ACTIVE_TREE: ba738ce84f830abe46f70f8f43bef3cad76c7d8e
+          GFO_EXPECTED_ACTIVE_COMMIT: 53518b258bda2ee76103d2e2e0a13e48d5f231ab
+          GFO_EXPECTED_ACTIVE_TREE: ed805b9284509a54f31fb8b5b6619465ad972e59
           GFO_FREE_TRANSPORT_HTTP_CACHE_MAX_ENTRIES: '1'
           GFO_FREE_TRANSPORT_ROUTE_HIT_CAP: '24'
           GFO_FREE_TRANSPORT_ENRICHMENT_WORKERS: '8'
@@ -141,7 +141,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: mohammadshortformeditor-source/greenfield-outreach
-          ref: efe22adc8a88f0bc46b3b258fbcc3630c1c0b8ed
+          ref: 53518b258bda2ee76103d2e2e0a13e48d5f231ab
           token: ${{ secrets.GREENFIELD_READ_TOKEN }}
           path: engine
           persist-credentials: false
@@ -158,8 +158,8 @@ jobs:
           RAW_TRIGGER_TITLE: ${{ github.event.issue.title }}
           GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
           GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
-          GFO_EXPECTED_ACTIVE_COMMIT: efe22adc8a88f0bc46b3b258fbcc3630c1c0b8ed
-          GFO_EXPECTED_ACTIVE_TREE: ba738ce84f830abe46f70f8f43bef3cad76c7d8e
+          GFO_EXPECTED_ACTIVE_COMMIT: 53518b258bda2ee76103d2e2e0a13e48d5f231ab
+          GFO_EXPECTED_ACTIVE_TREE: ed805b9284509a54f31fb8b5b6619465ad972e59
           GFO_FREE_TRANSPORT_HTTP_CACHE_MAX_ENTRIES: '1'
           GFO_FREE_TRANSPORT_ROUTE_HIT_CAP: '24'
           GFO_FREE_TRANSPORT_ENRICHMENT_WORKERS: '8'
