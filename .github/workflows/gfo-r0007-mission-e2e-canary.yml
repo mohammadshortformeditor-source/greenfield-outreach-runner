@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: mohammadshortformeditor-source/greenfield-outreach
-          ref: 53518b258bda2ee76103d2e2e0a13e48d5f231ab
+          ref: cd7a69b380e545dc9ae4ed7bc08377c00e4d0521
           token: ${{ secrets.GREENFIELD_READ_TOKEN }}
           path: engine
           persist-credentials: false
@@ -37,8 +37,8 @@ jobs:
       - name: Verify immutable test pins
         run: |
           test "$(git rev-parse HEAD)" = cc6d777edd5c8f5caa51b76add9d6c5306cdcf3f
-          test "$(git -C engine rev-parse HEAD)" = 53518b258bda2ee76103d2e2e0a13e48d5f231ab
-          test "$(git -C engine rev-parse 'HEAD^{tree}')" = ed805b9284509a54f31fb8b5b6619465ad972e59
+          test "$(git -C engine rev-parse HEAD)" = cd7a69b380e545dc9ae4ed7bc08377c00e4d0521
+          test "$(git -C engine rev-parse 'HEAD^{tree}')" = 2317e99a14b3ff4aa09c50aec1f2d7d6e3677bef
       - name: Install dependencies
         run: |
           python -m pip install --disable-pip-version-check -q -e ./engine
@@ -48,6 +48,10 @@ jobs:
           python -m pip install --disable-pip-version-check -q pytest
           python -m pytest -q engine/tests/test_r0007_motor_quality_speed.py engine/tests/runtime/test_r0007_route_identity_binding.py engine/tests/runtime/test_r0007_motor_packet_fidelity.py
           PYTHONPATH=ops/public_runner python -m pytest -q ops/public_runner/test_mission_frontier.py
+      - name: Diagnose existing search transport
+        if: contains(github.event.issue.title, 'SEARCH_PROBE')
+        timeout-minutes: 2
+        run: python engine/tests/smoke_r0007_motor_live.py --search-probe
       - name: Live bounded Motor component smoke
         if: contains(github.event.issue.title, 'LIVE_SMOKE')
         timeout-minutes: 5
@@ -59,8 +63,8 @@ jobs:
           GFO_PUBLIC_TRIGGER_TITLE: '[GFO-RUN] FIND 2'
           GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
           GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
-          GFO_EXPECTED_ACTIVE_COMMIT: 53518b258bda2ee76103d2e2e0a13e48d5f231ab
-          GFO_EXPECTED_ACTIVE_TREE: ed805b9284509a54f31fb8b5b6619465ad972e59
+          GFO_EXPECTED_ACTIVE_COMMIT: cd7a69b380e545dc9ae4ed7bc08377c00e4d0521
+          GFO_EXPECTED_ACTIVE_TREE: 2317e99a14b3ff4aa09c50aec1f2d7d6e3677bef
           GFO_FREE_TRANSPORT_HTTP_CACHE_MAX_ENTRIES: '1'
           GFO_FREE_TRANSPORT_ROUTE_HIT_CAP: '24'
           GFO_FREE_TRANSPORT_ENRICHMENT_WORKERS: '8'
@@ -90,7 +94,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: mohammadshortformeditor-source/greenfield-outreach
-          ref: 53518b258bda2ee76103d2e2e0a13e48d5f231ab
+          ref: cd7a69b380e545dc9ae4ed7bc08377c00e4d0521
           token: ${{ secrets.GREENFIELD_READ_TOKEN }}
           path: engine
           persist-credentials: false
@@ -107,8 +111,8 @@ jobs:
           RAW_TRIGGER_TITLE: ${{ github.event.issue.title }}
           GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
           GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
-          GFO_EXPECTED_ACTIVE_COMMIT: 53518b258bda2ee76103d2e2e0a13e48d5f231ab
-          GFO_EXPECTED_ACTIVE_TREE: ed805b9284509a54f31fb8b5b6619465ad972e59
+          GFO_EXPECTED_ACTIVE_COMMIT: cd7a69b380e545dc9ae4ed7bc08377c00e4d0521
+          GFO_EXPECTED_ACTIVE_TREE: 2317e99a14b3ff4aa09c50aec1f2d7d6e3677bef
           GFO_FREE_TRANSPORT_HTTP_CACHE_MAX_ENTRIES: '1'
           GFO_FREE_TRANSPORT_ROUTE_HIT_CAP: '24'
           GFO_FREE_TRANSPORT_ENRICHMENT_WORKERS: '8'
@@ -141,7 +145,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: mohammadshortformeditor-source/greenfield-outreach
-          ref: 53518b258bda2ee76103d2e2e0a13e48d5f231ab
+          ref: cd7a69b380e545dc9ae4ed7bc08377c00e4d0521
           token: ${{ secrets.GREENFIELD_READ_TOKEN }}
           path: engine
           persist-credentials: false
@@ -158,8 +162,8 @@ jobs:
           RAW_TRIGGER_TITLE: ${{ github.event.issue.title }}
           GFO_RENDER_DB_BROKER_URL: https://hxmplpufcujfdaklvrjy.supabase.co/functions/v1/gfo-render-db-authority-r0007
           GFO_RENDER_DB_BROKER_TOKEN: ${{ secrets.GFO_DB_BROKER_TOKEN }}
-          GFO_EXPECTED_ACTIVE_COMMIT: 53518b258bda2ee76103d2e2e0a13e48d5f231ab
-          GFO_EXPECTED_ACTIVE_TREE: ed805b9284509a54f31fb8b5b6619465ad972e59
+          GFO_EXPECTED_ACTIVE_COMMIT: cd7a69b380e545dc9ae4ed7bc08377c00e4d0521
+          GFO_EXPECTED_ACTIVE_TREE: 2317e99a14b3ff4aa09c50aec1f2d7d6e3677bef
           GFO_FREE_TRANSPORT_HTTP_CACHE_MAX_ENTRIES: '1'
           GFO_FREE_TRANSPORT_ROUTE_HIT_CAP: '24'
           GFO_FREE_TRANSPORT_ENRICHMENT_WORKERS: '8'
