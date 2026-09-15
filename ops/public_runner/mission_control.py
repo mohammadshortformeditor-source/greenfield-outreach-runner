@@ -54,10 +54,14 @@ def _normalize_source_url(value: object) -> str:
 
 
 def _candidate_frontier(stage_result: Mapping[str, Any]) -> tuple[list[str], list[str]]:
+    attempted = stage_result.get("motor_attempted_source_urls") or []
+    sources = [
+        normalized for value in attempted
+        if isinstance(value, str) and (normalized := _normalize_source_url(value))
+    ] if isinstance(attempted, list) else []
     raw = stage_result.get("engine_candidates")
     if isinstance(raw, (str, bytes)) or not isinstance(raw, list):
-        return [], []
-    sources: list[str] = []
+        return list(dict.fromkeys(sources)), []
     routes: list[str] = []
     for lead in raw:
         if not isinstance(lead, Mapping):

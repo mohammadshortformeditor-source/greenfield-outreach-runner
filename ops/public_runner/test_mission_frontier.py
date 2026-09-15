@@ -6,6 +6,15 @@ import mission_control
 import runner_once
 
 
+def test_failed_route_attempts_are_preserved_without_emitted_candidates():
+    sources, routes = mission_control._candidate_frontier({
+        "motor_attempted_source_urls": ["https://www.acme.test/jobs/editor/"],
+        "engine_candidates": [],
+    })
+    assert sources == ["https://acme.test/jobs/editor"]
+    assert routes == []
+
+
 def test_candidate_frontier_tracks_exact_routes_and_normalized_sources() -> None:
     sources, routes = mission_control._candidate_frontier(
         {
